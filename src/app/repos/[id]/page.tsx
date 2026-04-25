@@ -18,10 +18,10 @@ export default async function RepoDetailPage({ params }: PageProps) {
 
   const adminClient = createAdminClient();
 
-  // Get repository + user's active LLM provider in parallel
+  // Get repository + user's active LLM provider + embedding config in parallel
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyClient = adminClient as any;
-  const [repoResult, providerResult] = await Promise.all([
+  const [repoResult, providerResult, embeddingResult] = await Promise.all([
     adminClient
       .from("repositories")
       .select("*")
@@ -34,10 +34,16 @@ export default async function RepoDetailPage({ params }: PageProps) {
       .eq("user_id", user.id)
       .eq("is_active", true)
       .single(),
+    adminClient
+      .from("users")
+      .select("embedding_provider, embedding_api_key")
+      .eq("id", user.id)
+      .single(),
   ]);
 
   const { data: repo, error } = repoResult;
   const { data: activeProvider } = providerResult;
+  const embeddingConfigured = !!(embeddingResult.data?.embedding_provider && embeddingResult.data?.embedding_api_key);
 
   if (error || !repo) {
     notFound();
@@ -158,6 +164,8 @@ export default async function RepoDetailPage({ params }: PageProps) {
               llmProvider={activeProvider?.provider || "ollama"}
               llmModel={activeProvider?.model || undefined}
               llmBaseUrl={activeProvider?.base_url || undefined}
+              hasLlmProvider={!!activeProvider}
+              hasEmbeddingProvider={embeddingConfigured}
             />
           </div>
         </div>

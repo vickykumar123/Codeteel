@@ -135,6 +135,11 @@ export function LLMSettings({
       setMessage({ type: "error", text: "Model is required" });
       return;
     }
+    const meta = LLM_PROVIDERS.find(p => p.id === editForm.provider);
+    if (meta?.needsKey && !editForm.api_key && !editForm.api_key?.includes("...")) {
+      setMessage({ type: "error", text: "API key is required for this provider" });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -189,6 +194,11 @@ export function LLMSettings({
   };
 
   const deleteProvider = async (provider: string) => {
+    const target = providers.find(p => p.provider === provider);
+    if (target?.is_active && providers.length === 1) {
+      setMessage({ type: "error", text: "Cannot remove the only configured provider. Add another provider first." });
+      return;
+    }
     setSaving(true);
     try {
       const response = await fetch("/api/settings", {
@@ -198,7 +208,12 @@ export function LLMSettings({
       });
       if (!response.ok) throw new Error("Failed to delete");
 
-      setProviders(providers.filter(p => p.provider !== provider));
+      const remaining = providers.filter(p => p.provider !== provider);
+      // If we deleted the active provider, activate the first remaining one
+      if (target?.is_active && remaining.length > 0) {
+        await setActive(remaining[0].provider);
+      }
+      setProviders(remaining);
       setMessage({ type: "success", text: `${provider} removed` });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
@@ -208,6 +223,10 @@ export function LLMSettings({
   };
 
   const saveEmbedding = async () => {
+    if (!embeddingApiKey || embeddingApiKey.includes("...")) {
+      setMessage({ type: "error", text: "API key is required for embedding provider" });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {

@@ -43,6 +43,11 @@ export default async function NewChatPage({ params }: PageProps) {
     redirect(`/repos/${id}?error=not_indexed`);
   }
 
+  // Check if LLM provider is configured
+  if (!activeProvider) {
+    redirect(`/settings?error=no_llm&return=/repos/${id}/chat`);
+  }
+
   // Get recent conversations
   const { data: recentConversations } = await adminClient
     .from("conversations")
