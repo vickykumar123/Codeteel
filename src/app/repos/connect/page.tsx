@@ -76,7 +76,7 @@ export default async function ConnectRepoPage() {
               Select Repositories
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Choose which repositories CodeBot should have access to
+              Choose which repositories Codeteel should have access to
             </p>
           </div>
 

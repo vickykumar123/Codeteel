@@ -7,6 +7,7 @@ import { FileList } from "./file-list";
 import { ChangeBanner } from "./change-banner";
 import { BranchSelector } from "./branch-selector";
 import { RepoInstructions } from "./repo-instructions";
+import { PlatformConnect } from "./platform-connect";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -18,10 +19,10 @@ export default async function RepoDetailPage({ params }: PageProps) {
 
   const adminClient = createAdminClient();
 
-  // Get repository + user's active LLM provider in parallel
+  // Get repository + user's active LLM provider + embedding config in parallel
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyClient = adminClient as any;
-  const [repoResult, providerResult] = await Promise.all([
+  const [repoResult, providerResult, embeddingResult] = await Promise.all([
     adminClient
       .from("repositories")
       .select("*")
@@ -34,14 +35,36 @@ export default async function RepoDetailPage({ params }: PageProps) {
       .eq("user_id", user.id)
       .eq("is_active", true)
       .single(),
+    adminClient
+      .from("users")
+      .select("embedding_provider, embedding_api_key")
+      .eq("id", user.id)
+      .single(),
   ]);
 
   const { data: repo, error } = repoResult;
   const { data: activeProvider } = providerResult;
+  const embeddingConfigured = !!(embeddingResult.data?.embedding_provider && embeddingResult.data?.embedding_api_key);
 
   if (error || !repo) {
     notFound();
   }
+
+  // Fetch platform connections and Slack installation for this repo
+  const [connectionResult, slackResult] = await Promise.all([
+    anyClient
+      .from("platform_connections")
+      .select("id, platform, platform_channel_id, platform_team_id")
+      .eq("repo_id", id)
+      .eq("user_id", user.id),
+    anyClient
+      .from("slack_installations")
+      .select("team_id, team_name, bot_token")
+      .eq("user_id", user.id),
+  ]);
+
+  const platformConnections = connectionResult.data || [];
+  const slackInstalled = (slackResult.data || []).length > 0;
 
   // Get indexed files count
   const { count: fileCount } = await adminClient
@@ -158,6 +181,8 @@ export default async function RepoDetailPage({ params }: PageProps) {
               llmProvider={activeProvider?.provider || "ollama"}
               llmModel={activeProvider?.model || undefined}
               llmBaseUrl={activeProvider?.base_url || undefined}
+              hasLlmProvider={!!activeProvider}
+              hasEmbeddingProvider={embeddingConfigured}
             />
           </div>
         </div>
@@ -208,6 +233,14 @@ export default async function RepoDetailPage({ params }: PageProps) {
             </div>
           </div>
         )}
+
+        {/* Platform Connections */}
+        <PlatformConnect
+          repoId={repo.id}
+          repoFullName={repo.full_name}
+          connections={platformConnections}
+          slackInstalled={slackInstalled}
+        />
 
         {/* Repository Info */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/db/client";
 import Link from "next/link";
 import { LLMSettings } from "./llm-settings";
 import { CustomInstructions } from "./custom-instructions";
+import { Integrations } from "./integrations";
 
 export default async function SettingsPage() {
   const user = await requireAuth();
@@ -11,10 +12,15 @@ export default async function SettingsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyClient = adminClient as any;
 
-  // Fetch LLM providers and embedding settings in parallel
-  const [providersResult, profileResult] = await Promise.all([
+  // Fetch LLM providers, platform providers, embedding settings, and integrations in parallel
+  const [providersResult, platformProvidersResult, profileResult, slackResult] = await Promise.all([
     anyClient
       .from("llm_providers")
+      .select("id, provider, api_key, base_url, model, is_active")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true }),
+    anyClient
+      .from("platform_llm_providers")
       .select("id, provider, api_key, base_url, model, is_active")
       .eq("user_id", user.id)
       .order("created_at", { ascending: true }),
@@ -23,13 +29,22 @@ export default async function SettingsPage() {
       .select("embedding_provider, embedding_api_key, embedding_model, custom_instructions")
       .eq("id", user.id)
       .single(),
+    anyClient
+      .from("slack_installations")
+      .select("id, team_id, team_name, installed_at")
+      .eq("user_id", user.id),
   ]);
 
   const providers = (providersResult.data || []).map((p: Record<string, unknown>) => ({
     ...p,
     api_key: p.api_key ? String(p.api_key).slice(0, 7) + "..." : "",
   }));
+  const platformProviders = (platformProvidersResult.data || []).map((p: Record<string, unknown>) => ({
+    ...p,
+    api_key: p.api_key ? String(p.api_key).slice(0, 7) + "..." : "",
+  }));
   const profile = profileResult.data;
+  const slackInstallations = slackResult.data || [];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -60,6 +75,7 @@ export default async function SettingsPage() {
 
           <LLMSettings
             initialProviders={providers}
+            initialPlatformProviders={platformProviders}
             initialEmbeddingProvider={profile?.embedding_provider || "openai"}
             initialEmbeddingApiKey={profile?.embedding_api_key || ""}
             initialEmbeddingModel={profile?.embedding_model || ""}
@@ -78,6 +94,21 @@ export default async function SettingsPage() {
 
           <CustomInstructions
             initialInstructions={profile?.custom_instructions || ""}
+          />
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow mt-8">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Integrations
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Connect messaging platforms to interact with your repos via chat
+            </p>
+          </div>
+
+          <Integrations
+            slackInstallations={slackInstallations}
           />
         </div>
       </main>

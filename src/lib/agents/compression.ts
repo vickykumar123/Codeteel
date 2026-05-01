@@ -57,7 +57,7 @@ function countConversationMessagesTokens(messages: ConversationMessage[]): numbe
 // COMPRESSION PROMPT
 // ===========================================
 
-const COMPRESSION_SYSTEM_PROMPT = `You are a conversation compressor. Your job is to create a concise summary of a conversation between a user and a coding assistant (CodeBot).
+const COMPRESSION_SYSTEM_PROMPT = `You are a conversation compressor. Your job is to create a concise summary of a conversation between a user and a coding assistant (Codeteel).
 
 RULES:
 - Preserve ALL key information: decisions made, files discussed, code changes, plans created, errors encountered
@@ -66,7 +66,7 @@ RULES:
 - Preserve the outcome of any actions (what was searched, planned, executed, committed)
 - Do NOT include redundant tool call details — summarize what was found, not every search query
 - Do NOT include pleasantries or filler
-- Write in third person past tense: "The user asked...", "CodeBot searched...", "A plan was created..."
+- Write in third person past tense: "The user asked...", "Codeteel searched...", "A plan was created..."
 - Keep it under 2000 tokens
 - If a previous summary is provided, integrate it into the new summary (don't just append)`;
 

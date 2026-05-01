@@ -12,6 +12,8 @@ interface IndexButtonProps {
   llmProvider: string;
   llmBaseUrl?: string;
   llmModel?: string;
+  hasLlmProvider: boolean;
+  hasEmbeddingProvider: boolean;
 }
 
 const phaseLabels: Record<string, string> = {
@@ -27,9 +29,12 @@ export function IndexButton({
   llmProvider,
   llmBaseUrl,
   llmModel,
+  hasLlmProvider,
+  hasEmbeddingProvider,
 }: IndexButtonProps) {
   const llmConfig: BrowserLLMConfig = { provider: llmProvider, baseUrl: llmBaseUrl, model: llmModel };
   const router = useRouter();
+  const missingConfig = !hasLlmProvider || !hasEmbeddingProvider;
 
   const indexer = useIndexer({ repoId, defaultBranch, currentStatus, llmConfig });
 
@@ -141,12 +146,21 @@ export function IndexButton({
         )}
 
         {(indexer.status === "idle" || indexer.status === "completed" || indexer.status === "failed") && (
-          <button
-            onClick={indexer.start}
-            className="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-          >
-            {renderButtonLabel(indexer.status, currentStatus)}
-          </button>
+          missingConfig ? (
+            <a
+              href="/settings"
+              className="px-4 py-2 rounded-md text-sm font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-200 transition-colors"
+            >
+              Configure {!hasLlmProvider ? "LLM" : "Embedding"} in Settings
+            </a>
+          ) : (
+            <button
+              onClick={indexer.start}
+              className="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            >
+              {renderButtonLabel(indexer.status, currentStatus)}
+            </button>
+          )
         )}
       </div>
 

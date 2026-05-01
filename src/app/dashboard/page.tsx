@@ -37,7 +37,7 @@ export default async function DashboardPage() {
       <header className="bg-white dark:bg-gray-800 shadow">
         <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            CodeBot
+            Codeteel
           </h1>
           <div className="flex items-center gap-4">
             <Link

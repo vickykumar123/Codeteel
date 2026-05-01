@@ -265,6 +265,13 @@ export interface ExecutionResult {
  * State that persists across HTTP requests in the conversation.
  * Stored in conversations.execution_state JSONB column.
  */
+/** Search journal entry — tracks what was searched and found */
+export interface SearchJournalEntry {
+  query: string;
+  filesFound: string[];
+  summary: string;
+}
+
 export interface PersistedExecutionState {
   /** Files that have been changed in this conversation */
   filesChanged: string[];
@@ -276,4 +283,6 @@ export interface PersistedExecutionState {
   prUrl?: string;
   /** The PR number if created */
   prNumber?: number;
+  /** Search journal — recent searches to avoid redundant lookups (max 7) */
+  searchJournal?: SearchJournalEntry[];
 }

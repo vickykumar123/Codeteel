@@ -17,6 +17,7 @@ interface LLMProviderConfig {
 
 interface LLMSettingsProps {
   initialProviders: LLMProviderConfig[];
+  initialPlatformProviders: LLMProviderConfig[];
   initialEmbeddingProvider: string;
   initialEmbeddingApiKey: string;
   initialEmbeddingModel: string;
@@ -55,8 +56,12 @@ const EMBEDDING_PROVIDERS = [
 // COMPONENT
 // ===========================================
 
+// Cloud-only providers (no Ollama) for platform use
+const PLATFORM_PROVIDERS = LLM_PROVIDERS.filter(p => p.id !== "ollama");
+
 export function LLMSettings({
   initialProviders,
+  initialPlatformProviders,
   initialEmbeddingProvider,
   initialEmbeddingApiKey,
   initialEmbeddingModel,
@@ -66,6 +71,12 @@ export function LLMSettings({
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<LLMProviderConfig>({ provider: "", api_key: "", base_url: "", model: "", is_active: false });
   const [addingNew, setAddingNew] = useState(false);
+
+  // Platform providers state
+  const [platformProviders, setPlatformProviders] = useState<LLMProviderConfig[]>(initialPlatformProviders);
+  const [editingPlatformProvider, setEditingPlatformProvider] = useState<string | null>(null);
+  const [platformEditForm, setPlatformEditForm] = useState<LLMProviderConfig>({ provider: "", api_key: "", base_url: "", model: "", is_active: false });
+  const [addingNewPlatform, setAddingNewPlatform] = useState(false);
 
   // Ollama-specific
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
@@ -135,6 +146,11 @@ export function LLMSettings({
       setMessage({ type: "error", text: "Model is required" });
       return;
     }
+    const meta = LLM_PROVIDERS.find(p => p.id === editForm.provider);
+    if (meta?.needsKey && !editForm.api_key && !editForm.api_key?.includes("...")) {
+      setMessage({ type: "error", text: "API key is required for this provider" });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -189,6 +205,11 @@ export function LLMSettings({
   };
 
   const deleteProvider = async (provider: string) => {
+    const target = providers.find(p => p.provider === provider);
+    if (target?.is_active && providers.length === 1) {
+      setMessage({ type: "error", text: "Cannot remove the only configured provider. Add another provider first." });
+      return;
+    }
     setSaving(true);
     try {
       const response = await fetch("/api/settings", {
@@ -198,7 +219,12 @@ export function LLMSettings({
       });
       if (!response.ok) throw new Error("Failed to delete");
 
-      setProviders(providers.filter(p => p.provider !== provider));
+      const remaining = providers.filter(p => p.provider !== provider);
+      // If we deleted the active provider, activate the first remaining one
+      if (target?.is_active && remaining.length > 0) {
+        await setActive(remaining[0].provider);
+      }
+      setProviders(remaining);
       setMessage({ type: "success", text: `${provider} removed` });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
@@ -208,6 +234,10 @@ export function LLMSettings({
   };
 
   const saveEmbedding = async () => {
+    if (!embeddingApiKey || embeddingApiKey.includes("...")) {
+      setMessage({ type: "error", text: "API key is required for embedding provider" });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -224,6 +254,113 @@ export function LLMSettings({
       });
       if (!response.ok) throw new Error("Failed to save embedding settings");
       setMessage({ type: "success", text: "Embedding settings saved" });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Platform provider functions
+  const startAddPlatform = (providerId: string) => {
+    const meta = PLATFORM_PROVIDERS.find(p => p.id === providerId);
+    if (!meta) return;
+    setPlatformEditForm({
+      provider: providerId,
+      api_key: "",
+      base_url: meta.defaultUrl,
+      model: "",
+      is_active: platformProviders.length === 0,
+    });
+    setAddingNewPlatform(true);
+    setEditingPlatformProvider(providerId);
+  };
+
+  const startEditPlatform = (p: LLMProviderConfig) => {
+    setPlatformEditForm({ ...p });
+    setAddingNewPlatform(false);
+    setEditingPlatformProvider(p.provider);
+  };
+
+  const cancelEditPlatform = () => {
+    setEditingPlatformProvider(null);
+    setAddingNewPlatform(false);
+  };
+
+  const savePlatformProvider = async () => {
+    if (!platformEditForm.model) {
+      setMessage({ type: "error", text: "Model is required" });
+      return;
+    }
+    if (!platformEditForm.api_key || platformEditForm.api_key === "") {
+      setMessage({ type: "error", text: "API key is required for platform providers" });
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform_provider: platformEditForm }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to save");
+      }
+
+      const existing = platformProviders.findIndex(p => p.provider === platformEditForm.provider);
+      const updated = { ...platformEditForm, api_key: platformEditForm.api_key.includes("...") ? platformEditForm.api_key : (platformEditForm.api_key ? platformEditForm.api_key.slice(0, 7) + "..." : "") };
+      if (existing >= 0) {
+        const newProviders = [...platformProviders];
+        newProviders[existing] = updated;
+        setPlatformProviders(newProviders);
+      } else {
+        setPlatformProviders([...platformProviders, updated]);
+      }
+
+      setEditingPlatformProvider(null);
+      setAddingNewPlatform(false);
+      setMessage({ type: "success", text: `Platform provider ${platformEditForm.provider} saved` });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed to save" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setActivePlatform = async (provider: string) => {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ set_active_platform_provider: { provider } }),
+      });
+      if (!response.ok) throw new Error("Failed to set active");
+
+      setPlatformProviders(platformProviders.map(p => ({ ...p, is_active: p.provider === provider })));
+      setMessage({ type: "success", text: `${provider} set as active platform provider` });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deletePlatformProvider = async (provider: string) => {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delete_platform_provider: { provider } }),
+      });
+      if (!response.ok) throw new Error("Failed to delete");
+
+      const remaining = platformProviders.filter(p => p.provider !== provider);
+      setPlatformProviders(remaining);
+      setMessage({ type: "success", text: `${provider} removed from platform providers` });
     } catch (err) {
       setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
     } finally {
@@ -349,6 +486,106 @@ export function LLMSettings({
           </div>
         </div>
       )}
+
+      {/* Platform LLM Providers */}
+      <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Platform LLM (Slack, Telegram, Discord)</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          Cloud providers only. Used when messages come from messaging platforms (server cannot reach local Ollama).
+        </p>
+
+        {platformProviders.length === 0 && !addingNewPlatform && (
+          <div className="text-sm text-gray-500 dark:text-gray-400 p-4 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center mb-4">
+            No platform provider configured. Add one to use Codeteel from Slack, Telegram, or Discord.
+          </div>
+        )}
+
+        <div className="space-y-3 mb-4">
+          {platformProviders.map((p) => (
+            <div key={p.provider} className={`p-4 border-2 rounded-lg ${p.is_active ? "border-purple-500 bg-purple-50 dark:bg-purple-900/20" : "border-gray-200 dark:border-gray-600"}`}>
+              {editingPlatformProvider === p.provider && !addingNewPlatform ? (
+                <ProviderForm
+                  form={platformEditForm}
+                  setForm={setPlatformEditForm}
+                  ollamaModels={[]}
+                  ollamaStatus="idle"
+                  fetchOllamaModels={() => {}}
+                  formatSize={formatSize}
+                  onSave={savePlatformProvider}
+                  onCancel={cancelEditPlatform}
+                  saving={saving}
+                />
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {PLATFORM_PROVIDERS.find(m => m.id === p.provider)?.name || p.provider}
+                      </span>
+                      {p.is_active && <span className="text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 px-2 py-0.5 rounded-full">Active</span>}
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                      Model: <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded">{p.model}</code>
+                      {p.api_key && <span className="ml-3">Key: {p.api_key}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!p.is_active && (
+                      <button onClick={() => setActivePlatform(p.provider)} disabled={saving} className="text-xs px-3 py-1 bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 rounded hover:bg-purple-200 disabled:opacity-50">
+                        Set Active
+                      </button>
+                    )}
+                    <button onClick={() => startEditPlatform(p)} className="text-xs px-3 py-1 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded hover:bg-gray-200">
+                      Edit
+                    </button>
+                    <button onClick={() => deletePlatformProvider(p.provider)} disabled={saving} className="text-xs px-3 py-1 bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 rounded hover:bg-red-200 disabled:opacity-50">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {addingNewPlatform && editingPlatformProvider && (
+            <div className="p-4 border-2 border-green-300 dark:border-green-600 rounded-lg bg-green-50 dark:bg-green-900/10">
+              <div className="text-sm font-medium text-green-700 dark:text-green-400 mb-3">
+                Add {PLATFORM_PROVIDERS.find(m => m.id === platformEditForm.provider)?.name}
+              </div>
+              <ProviderForm
+                form={platformEditForm}
+                setForm={setPlatformEditForm}
+                ollamaModels={[]}
+                ollamaStatus="idle"
+                fetchOllamaModels={() => {}}
+                formatSize={formatSize}
+                onSave={savePlatformProvider}
+                onCancel={cancelEditPlatform}
+                saving={saving}
+              />
+            </div>
+          )}
+        </div>
+
+        {(() => {
+          const configuredPlatformIds = platformProviders.map(p => p.provider);
+          const availablePlatformToAdd = PLATFORM_PROVIDERS.filter(p => !configuredPlatformIds.includes(p.id));
+          return availablePlatformToAdd.length > 0 && !addingNewPlatform ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {availablePlatformToAdd.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => startAddPlatform(p.id)}
+                  className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg text-left hover:border-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/10 transition-colors"
+                >
+                  <div className="font-medium text-gray-900 dark:text-white text-sm">{p.name}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{p.description}</div>
+                </button>
+              ))}
+            </div>
+          ) : null;
+        })()}
+      </div>
 
       {/* Embedding Settings */}
       <div className="pt-6 border-t border-gray-200 dark:border-gray-700">

@@ -91,21 +91,10 @@ interface UseOrchestratorOptions {
 }
 
 // ===========================================
-// APPROVAL/REJECTION DETECTION
+// APPROVAL/REJECTION DETECTION (from constants — single source of truth)
 // ===========================================
 
-const APPROVAL_PHRASES = [
-  "yes", "y", "go ahead", "proceed", "do it", "ok", "okay",
-  "sure", "yep", "yeah", "looks good", "approve", "lgtm",
-  "ship it", "make the changes", "sounds good", "perfect",
-  "great", "let's do it", "yes please", "continue",
-  "try again", "retry", "try it again", "run it again",
-];
-
-const REJECTION_PHRASES = [
-  "no", "n", "cancel", "stop", "reject", "don't", "nope",
-  "nevermind", "never mind", "scratch that", "undo",
-];
+import { APPROVAL_PHRASES, REJECTION_PHRASES } from "@/lib/agents/constants";
 
 function isApprovalText(message: string): boolean {
   const normalized = message.toLowerCase().trim();
@@ -788,7 +777,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
 
   // Shared helper: fetch branches from API and show modal
   const fetchAndShowBranchSelector = useCallback(
-    async (suggestedName = "feature/codebot-changes") => {
+    async (suggestedName = "feature/codeteel-changes") => {
       try {
         const result = await executorRef.current.listBranches(repoId);
         setBranchSelectionRequest({

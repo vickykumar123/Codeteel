@@ -38,31 +38,20 @@ import {
   shouldCompress,
   type ChatSummary,
 } from "./compression";
-import { MAX_ORCHESTRATOR_ITERATIONS, SAME_ACTION_LIMIT } from "./constants";
+import { MAX_ORCHESTRATOR_ITERATIONS, SAME_ACTION_LIMIT, APPROVAL_PHRASES, REJECTION_PHRASES, PAUSE_PHRASES } from "./constants";
+import type { SearchJournalEntry } from "./types";
 
-// Approval detection — mirrors useOrchestrator hook's text detection.
-// When the orchestrator has a pending plan and user sends an approval phrase,
-// we skip the LLM call and execute directly (LLM sometimes re-plans instead).
-const APPROVAL_PHRASES = [
-  "yes", "y", "go ahead", "proceed", "do it", "ok", "okay",
-  "sure", "yep", "yeah", "looks good", "approve", "lgtm",
-  "ship it", "make the changes", "sounds good", "perfect",
-  "great", "let's do it", "yes please", "continue",
-  "try again", "retry", "try it again", "run it again",
-];
+const MAX_JOURNAL_ENTRIES = 7;
 
-// Rejection = user wants a DIFFERENT plan (clears current plan, triggers re-plan)
-const REJECTION_PHRASES = [
-  "no", "n", "reject", "don't", "nope",
-  "nevermind", "never mind", "scratch that", "undo",
-  "not what i want", "wrong", "try something else",
-  "different approach", "start over",
-];
+function addJournalEntry(
+  journal: SearchJournalEntry[],
+  entry: SearchJournalEntry,
+): SearchJournalEntry[] {
+  const updated = [...journal, entry];
+  return updated.slice(-MAX_JOURNAL_ENTRIES); // Keep last 7
+}
 
-// Pause = user wants to stop but may come back (keeps plan intact)
-const PAUSE_PHRASES = [
-  "stop", "cancel", "wait", "hold on", "pause", "not now", "later",
-];
+// Approval/Rejection/Pause phrases imported from constants.ts (single source of truth)
 
 function isApprovalMessage(message: string): boolean {
   const normalized = message.toLowerCase().trim();
@@ -241,12 +230,13 @@ function recoverFromUserMessage(
 // ORCHESTRATOR SYSTEM PROMPT
 // ===========================================
 
-const orchestratorSystemPrompt = `You are CodeBot, an AI coding assistant. You are a ROUTER — you MUST delegate to specialized agents using tools. You NEVER answer questions about code yourself or describe changes without delegating.
+const orchestratorSystemPrompt = `You are Codeteel, an AI coding assistant. You are a ROUTER — you MUST delegate to specialized agents using tools. You NEVER answer questions about code yourself or describe changes without delegating.
 
 ## Tools
 
 | Tool | When to use |
 |------|-------------|
+| think | Reason about a complex or ambiguous request before deciding which tool to call |
 | delegate_to_search | Any question about the codebase (read-only) |
 | request_branch_selection | Before planning code changes (if no branch set) |
 | delete_files | User wants to delete/remove files ONLY (no other ops) |
@@ -509,6 +499,7 @@ export async function runOrchestrator(
   let prCreated = initialState?.prCreated || false;
   let prUrl = initialState?.prUrl;
   let prNumber = initialState?.prNumber;
+  let searchJournal: SearchJournalEntry[] = initialState?.searchJournal || [];
 
   // Short-circuit: if there's a pending plan and user sends approval,
   // execute directly without LLM call (LLM sometimes re-plans instead)
@@ -527,14 +518,14 @@ export async function runOrchestrator(
 
       return {
         response: responseText,
-        executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber },
+        executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal },
       };
     } else {
       const errorMsg = `Execution failed: ${execResult.error}`;
       onEvent({ type: "error", message: errorMsg });
       return {
         response: errorMsg,
-        executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber },
+        executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal },
       };
     }
   }
@@ -545,7 +536,7 @@ export async function runOrchestrator(
     onEvent({ type: "message", content: responseText });
     return {
       response: responseText,
-      executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber },
+      executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal },
     };
   }
 
@@ -591,6 +582,17 @@ ${prCreated ? `PR already created: ${prUrl}` : "PR not yet created. Call create_
   if (context.customInstructions) {
     systemContext += `\n\n## CUSTOM INSTRUCTIONS (from user/repo settings — follow these):
 ${context.customInstructions}`;
+  }
+
+  // Inject search journal
+  const journal = initialState?.searchJournal;
+  if (journal && journal.length > 0) {
+    const journalText = journal.map(j =>
+      `- "${j.query}" → ${j.filesFound.join(", ")} (${j.summary})`
+    ).join("\n");
+    systemContext += `\n\n## PREVIOUS SEARCHES (from this conversation):
+${journalText}
+If the user references files already found above, delegate directly — don't search again.`;
   }
 
   // Inject branch context
@@ -698,7 +700,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
     if (!response.tool_calls || response.tool_calls.length === 0) {
       onEvent({ type: "message", content: response.content });
       const executionState: PersistedExecutionState = {
-        filesChanged, currentPlan, prCreated, prUrl, prNumber,
+        filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal,
       };
       return { response: response.content, plan: currentPlan, executionState };
     }
@@ -711,7 +713,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
       if (actionHistory.filter((a) => a === actionKey).length >= SAME_ACTION_LIMIT) {
         onEvent({ type: "error", message: "I seem to be stuck. Let me try a different approach." });
         const executionState: PersistedExecutionState = {
-          filesChanged, currentPlan, prCreated, prUrl, prNumber,
+          filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal,
         };
         return {
           response: "I encountered an issue and couldn't complete the task. Please try rephrasing your request.",
@@ -740,14 +742,23 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
         const question = toolCall.arguments.question as string;
         onEvent({ type: "thinking", message: "Searching codebase..." });
 
-        const searchResult = await runSearch(question, context, executor, chatFn, onEvent);
+        const searchResult = await runSearch(question, context, executor, chatFn, onEvent, { filesChanged });
+
+        // Update search journal
+        if (searchResult.filesFound && searchResult.filesFound.length > 0) {
+          searchJournal = addJournalEntry(searchJournal, {
+            query: question,
+            filesFound: searchResult.filesFound,
+            summary: searchResult.answer.slice(0, 150),
+          });
+        }
 
         if (!context.customInstructions) {
           // No custom instructions — return search results directly to user
           // (don't let the LLM summarize the detailed answer into a vague one-liner)
           onEvent({ type: "message", content: searchResult.answer });
           const executionState: PersistedExecutionState = {
-            filesChanged, currentPlan, prCreated, prUrl, prNumber,
+            filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal,
           };
           return { response: searchResult.answer, executionState };
         }
@@ -777,7 +788,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
 
           // Return early — wait for branch selection
           const executionState: PersistedExecutionState = {
-            filesChanged, currentPlan, prCreated, prUrl, prNumber,
+            filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal,
           };
 
           onEvent({ type: "tool_result", tool: toolCall.name, result: "Waiting for branch selection", error: false });
@@ -857,10 +868,23 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
           const request = toolCall.arguments.request as string;
           onEvent({ type: "thinking", message: "Exploring codebase and creating plan..." });
 
-          const planResult = await runPlanner(request, context, executor, chatFn, onEvent);
+          const planResult = await runPlanner(request, context, executor, chatFn, onEvent, {
+            filesChanged,
+            searchJournal: initialState?.searchJournal,
+          });
 
           if (planResult.plan) {
             currentPlan = planResult.plan;
+
+            // Update search journal with files found during planning
+            if (planResult.filesFound && planResult.filesFound.length > 0) {
+              searchJournal = addJournalEntry(searchJournal, {
+                query: request,
+                filesFound: planResult.filesFound,
+                summary: `Plan: ${planResult.plan.title}`,
+              });
+            }
+
             onEvent({ type: "plan_pending", plan: currentPlan });
 
             const stepsFormatted = currentPlan.steps
@@ -913,7 +937,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
           try {
             const prResult = await executor.createPR(context.repoId, {
               title: toolCall.arguments.title as string,
-              body: `${toolCall.arguments.body as string}\n\n---\n*Created by CodeBot*`,
+              body: `${toolCall.arguments.body as string}\n\n---\n*Created by Codeteel*`,
               head: context.workingBranch,
               base: context.defaultBranch,
             });
@@ -992,7 +1016,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
             // Return review directly to user
             onEvent({ type: "message", content: reviewResult.review });
             const executionState: PersistedExecutionState = {
-              filesChanged, currentPlan, prCreated, prUrl, prNumber: prNumber as number,
+              filesChanged, currentPlan, prCreated, prUrl, prNumber: prNumber as number, searchJournal,
             };
             return { response: reviewResult.review, executionState };
           }
@@ -1024,7 +1048,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
           } else {
             onEvent({ type: "message", content: reviewResult.review });
             const executionState: PersistedExecutionState = {
-              filesChanged, currentPlan, prCreated, prUrl, prNumber,
+              filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal,
             };
             return { response: reviewResult.review, executionState };
           }
@@ -1061,7 +1085,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
   // Max iterations
   onEvent({ type: "error", message: "Reached maximum iterations." });
   const executionState: PersistedExecutionState = {
-    filesChanged, currentPlan, prCreated, prUrl, prNumber,
+    filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal,
   };
   return {
     response: "I wasn't able to complete the task within the iteration limit.",

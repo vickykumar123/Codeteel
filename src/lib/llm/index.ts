@@ -209,6 +209,57 @@ export function chatStream(
   });
 }
 
+// ===========================================
+// SHARED CHAT FUNCTION FACTORY
+// ===========================================
+// Creates a ChatFn compatible with the agent system.
+// Used by: web (useOrchestrator), Slack handler, Telegram handler, test scripts.
+// Single source of truth — no duplicated chat logic per platform.
+
+import type {
+  ChatFn,
+  LLMChatMessage,
+  LLMToolDef,
+  LLMChatResponse,
+  LLMToolCall,
+} from "@/lib/agents/types";
+
+export function createChatFn(config: LLMConfig): ChatFn {
+  const client = createClient(config);
+
+  return async (
+    messages: LLMChatMessage[],
+    tools?: LLMToolDef[],
+  ): Promise<LLMChatResponse> => {
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: messages as ChatCompletionMessageParam[],
+      tools: tools && tools.length > 0 ? tools as ChatCompletionTool[] : undefined,
+      tool_choice: tools && tools.length > 0 ? "auto" : undefined,
+    });
+
+    const choice = completion.choices[0];
+    const message = choice?.message;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toolCalls: LLMToolCall[] | undefined = message?.tool_calls
+      ?.filter((tc: { type: string }) => tc.type === "function")
+      .map((tc: any) => ({
+        id: tc.id,
+        type: "function" as const,
+        function: {
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        },
+      }));
+
+    return {
+      content: message?.content || "",
+      tool_calls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
+    };
+  };
+}
+
 // Simple chat without tools (for backward compatibility)
 export async function chatSimple(
   config: LLMConfig,

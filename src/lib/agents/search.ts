@@ -37,13 +37,15 @@ export function resetReadTracker(): void {
   readTracker.clear();
 }
 
-function trackRead(repoId: string, path: string): string | null {
-  const key = `${repoId}:${path}`;
+function trackRead(repoId: string, path: string, startLine?: number, endLine?: number): string | null {
+  // Track by file path + line range — reading different sections is legitimate
+  const rangeKey = startLine || endLine ? `:${startLine || 0}-${endLine || "end"}` : ":full";
+  const key = `${repoId}:${path}${rangeKey}`;
   const count = (readTracker.get(key) || 0) + 1;
   readTracker.set(key, count);
 
   if (count >= READ_DEDUP_WARN_THRESHOLD) {
-    return `[DUPLICATE READ x${count}] You have read this file ${count} times. Consider using text_search instead.`;
+    return `[DUPLICATE READ x${count}] You have read this exact range ${count} times. You already have this content — proceed with create_plan.`;
   }
   return null;
 }
@@ -192,10 +194,18 @@ export const searchTools: Tool[] = [
 // TOOL EXECUTION (via ToolExecutor)
 // ===========================================
 
+export interface SearchToolOpts {
+  /** Files changed in this conversation — read from GitHub instead of stale DB */
+  filesChanged?: string[];
+  /** Working branch to read changed files from */
+  workingBranch?: string;
+}
+
 export async function executeSearchTool(
   toolCall: ToolCall,
   repoId: string,
-  executor: ToolExecutor
+  executor: ToolExecutor,
+  opts?: SearchToolOpts,
 ): Promise<ToolResult> {
   const { name, arguments: args, id } = toolCall;
 
@@ -220,15 +230,36 @@ export async function executeSearchTool(
           executor
         );
 
-      case "read_file":
+      case "read_file": {
+        const filePath = args.path as string;
+
+        // If file was changed in this conversation, read from GitHub (fresh) instead of stale DB
+        if (opts?.filesChanged?.includes(filePath) && opts?.workingBranch) {
+          try {
+            const githubFile = await executor.readFileFromGitHub(repoId, filePath, opts.workingBranch);
+            if (githubFile) {
+              const lines = githubFile.content.split("\n");
+              const startLine = (args.start_line as number) || 1;
+              const endLine = (args.end_line as number) || lines.length;
+              const sliced = lines.slice(startLine - 1, endLine);
+              const numbered = sliced.map((line: string, idx: number) => `${startLine + idx}\t${line}`).join("\n");
+              return {
+                tool_call_id: id,
+                content: `## ${filePath}\n**Language:** ${githubFile.language || "unknown"} | **Lines:** ${sliced.length}\n*Note: Read from working branch (file was modified in this conversation)*\n\n\`\`\`\n${numbered}\n\`\`\``,
+              };
+            }
+          } catch { /* fall through to normal read */ }
+        }
+
         return await readFile(
           id,
-          args.path as string,
+          filePath,
           (args.start_line as number) || undefined,
           (args.end_line as number) || undefined,
           repoId,
           executor
         );
+      }
 
       case "list_files":
         return await listFiles(
@@ -457,7 +488,7 @@ async function readFile(
   repoId: string,
   executor: ToolExecutor
 ): Promise<ToolResult> {
-  const dedupWarning = trackRead(repoId, path);
+  const dedupWarning = trackRead(repoId, path, startLine, endLine);
 
   const file = await executor.readFile(repoId, {
     path,
@@ -652,8 +683,14 @@ export async function runSearch(
   context: AgentContext,
   executor: ToolExecutor,
   chatFn: ChatFn,
-  onEvent: (event: StreamEvent) => void
-): Promise<{ answer: string; error?: string }> {
+  onEvent: (event: StreamEvent) => void,
+  opts?: { filesChanged?: string[] },
+): Promise<{ answer: string; error?: string; filesFound?: string[] }> {
+  const searchOpts: SearchToolOpts = {
+    filesChanged: opts?.filesChanged,
+    workingBranch: context.workingBranch,
+  };
+  const filesFound: string[] = [];
   const messages: AgentMessage[] = [
     { role: "system", content: searchAgentSystemPrompt },
     {
@@ -701,7 +738,7 @@ export async function runSearch(
 
     // No tool calls → final answer
     if (!response.tool_calls || response.tool_calls.length === 0) {
-      return { answer: response.content };
+      return { answer: response.content, filesFound };
     }
 
     const toolCalls = convertToolCalls(response.tool_calls);
@@ -739,8 +776,15 @@ export async function runSearch(
         const toolResult = await executeSearchTool(
           toolCall,
           context.repoId,
-          executor
+          executor,
+          searchOpts,
         );
+
+        // Track files found for journal
+        if (toolCall.name === "read_file" && !toolResult.error) {
+          const fp = toolCall.arguments.path as string;
+          if (fp && !filesFound.includes(fp)) filesFound.push(fp);
+        }
 
         onEvent({
           type: "tool_result",
@@ -829,5 +873,5 @@ export async function runSearch(
 
   // Call without tools to force a text answer
   const finalResponse = await chatFn(llmMessages);
-  return { answer: finalResponse.content };
+  return { answer: finalResponse.content, filesFound };
 }

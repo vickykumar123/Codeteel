@@ -43,6 +43,11 @@ export default async function ChatWithIdPage({ params }: PageProps) {
     redirect(`/repos/${id}?error=not_indexed`);
   }
 
+  // Check if LLM provider is configured
+  if (!activeProvider) {
+    redirect(`/settings?error=no_llm&return=/repos/${id}/chat/${chatId}`);
+  }
+
   // Get conversation
   const { data: conversation } = await adminClient
     .from("conversations")
@@ -96,7 +101,7 @@ export default async function ChatWithIdPage({ params }: PageProps) {
   // Get recent conversations
   const { data: recentConversations } = await adminClient
     .from("conversations")
-    .select("id, title, updated_at")
+    .select("id, title, updated_at, platform")
     .eq("repo_id", id)
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
@@ -107,6 +112,7 @@ export default async function ChatWithIdPage({ params }: PageProps) {
     id: c.id,
     title: c.title || "Untitled",
     updated_at: c.updated_at || new Date().toISOString(),
+    platform: (c as { platform?: string }).platform || "web",
   }));
 
   return (

@@ -5,7 +5,7 @@
 // LLM calls go through injected ChatFn.
 // Works in browser (WebToolExecutor) or server (ServerToolExecutor).
 
-import { searchTools, executeSearchTool } from "./search";
+import { searchTools, executeSearchTool, type SearchToolOpts } from "./search";
 import type { ToolExecutor } from "./tools/interface";
 import type {
   AgentContext,
@@ -96,9 +96,10 @@ const createPlanTool: Tool = {
 const plannerSystemPrompt = `You are a code planner agent. Explore the codebase and create a detailed implementation plan.
 
 ## Workflow
-1. Search for relevant files (grep, semantic_search, text_search)
-2. Read files to understand the code (read_file)
-3. Call create_plan when you have enough context
+1. Check if the user gave exact file paths — if yes, read them directly (skip searching)
+2. Otherwise, search for relevant files (grep first, then semantic_search if needed)
+3. Read files to understand the code (read_file)
+4. Call create_plan when you have enough context
 
 ## Tools
 - grep: Exact pattern search with line numbers (best first choice)
@@ -109,6 +110,14 @@ const plannerSystemPrompt = `You are a code planner agent. Explore the codebase 
 - list_code_definitions: File summaries without full content
 - think: Reason about progress (only when stuck or handling complex requests)
 - create_plan: Submit the plan (call last)
+
+## Search Budget
+You have a MAXIMUM of 10 iterations. Use them wisely:
+- If user gives file paths → read directly, plan in 2-3 iterations
+- If searching → find files in 3-4 searches, read them, then call create_plan
+- If you can't find files after 4-5 searches → stop and ask the user for exact file paths
+
+Do NOT keep searching hoping to find something. Search efficiently, then create_plan or ask the user.
 
 ## Plan Rules
 - Each step = ONE atomic change to ONE file
@@ -122,10 +131,22 @@ const plannerSystemPrompt = `You are a code planner agent. Explore the codebase 
 **Bad**: "Update the file" / "Add the feature" / "Fix the bug"
 
 ## Efficiency
-- If the user provides exact file paths, read them directly — don't search first
+- If the user provides exact file paths (e.g. "modify src/main.py"), call read_file DIRECTLY — do NOT search first
 - Read each file at most once
 - For delete/create operations, call create_plan immediately — no searching needed
-- Call create_plan as soon as you have enough context. Don't over-search.`;
+- Call create_plan as soon as you have enough context. Don't over-search.
+- If previous searches are listed below, use those results — don't search for the same files again
+
+## CRITICAL: Always use the create_plan tool
+You MUST submit your plan by calling the create_plan tool. Do NOT write the plan as text in your response.
+Wrong: Responding with "- **Title:** Add error handling..."
+Right: Calling create_plan({"title": "Add error handling", "steps": [...]})
+
+## When you can't find files
+If your searches return nothing relevant, DO NOT guess. Instead, respond with text explaining:
+- What you searched for
+- What files you found (if any)
+- Ask the user to specify the exact file path(s) they want modified`;
 
 // ===========================================
 // TOOL CONVERSION
@@ -227,11 +248,35 @@ export async function runPlanner(
   context: AgentContext,
   executor: ToolExecutor,
   chatFn: ChatFn,
-  onEvent: (event: StreamEvent) => void
-): Promise<{ plan: Plan | null; error?: string }> {
+  onEvent: (event: StreamEvent) => void,
+  opts?: { filesChanged?: string[]; searchJournal?: import("./types").SearchJournalEntry[] },
+): Promise<{ plan: Plan | null; error?: string; filesFound?: string[] }> {
   const allTools = [...searchTools, thinkTool, createPlanTool];
+  const searchOpts: SearchToolOpts = {
+    filesChanged: opts?.filesChanged,
+    workingBranch: context.workingBranch,
+  };
+  const filesFound: string[] = []; // Track files found for journal
 
   let systemPrompt = plannerSystemPrompt;
+
+  // Inject search journal — files already found in previous messages
+  if (opts?.searchJournal && opts.searchJournal.length > 0) {
+    const journalText = opts.searchJournal.map(j =>
+      `- "${j.query}" → ${j.filesFound.join(", ")} (${j.summary})`
+    ).join("\n");
+    systemPrompt += `\n\n## PREVIOUS SEARCHES (already found — don't search again):
+${journalText}
+Use these file paths directly with read_file if you need to examine them.`;
+  }
+
+  // Inject files changed in this conversation
+  if (opts?.filesChanged && opts.filesChanged.length > 0) {
+    systemPrompt += `\n\n## FILES ALREADY CHANGED IN THIS CONVERSATION:
+${opts.filesChanged.map(f => `- ${f}`).join("\n")}
+These files have been modified on the working branch. When reading them, you'll get the latest version.`;
+  }
+
   if (context.customInstructions) {
     systemPrompt += `\n\n## CUSTOM INSTRUCTIONS (follow these when creating the plan):\n${context.customInstructions}`;
   }
@@ -279,8 +324,8 @@ export async function runPlanner(
       return { role: m.role, content: m.content };
     });
 
-    // Forced reflection: after half iterations without a plan, force a think call
-    if (iterations === Math.floor(MAX_PLANNER_ITERATIONS / 2)) {
+    // Forced reflection: at iteration 5, force the planner to assess and plan
+    if (iterations === 5) {
       const thinkCallId = `forced-think-${Date.now()}`;
       messages.push({
         role: "assistant",
@@ -366,7 +411,7 @@ export async function runPlanner(
             result: `Plan created: ${plan.title} (${plan.steps.length} steps)`,
           });
 
-          return { plan };
+          return { plan, filesFound };
         } else {
           // Invalid plan — ask planner to retry
           messages.push({
@@ -420,7 +465,8 @@ export async function runPlanner(
         let toolResult = await executeSearchTool(
           toolCall,
           context.repoId,
-          executor
+          executor,
+          searchOpts
         );
 
         // Fallback: if read_file returns "File not found" from Supabase index,
@@ -455,6 +501,12 @@ export async function runPlanner(
            toolResult.content.includes("Found 0"))
         ) {
           toolResult.content += "\n\nHINT: If the user gave you exact file paths, try read_file with those paths directly instead of searching. Files may exist on the branch but not be in the search index.";
+        }
+
+        // Track files found for journal
+        if (toolCall.name === "read_file" && !toolResult.error) {
+          const fp = toolCall.arguments.path as string;
+          if (fp && !filesFound.includes(fp)) filesFound.push(fp);
         }
 
         onEvent({

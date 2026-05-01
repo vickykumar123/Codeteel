@@ -1,0 +1,75 @@
+service: codeteel-worker
+
+frameworkVersion: '3'
+
+useDotenv: true
+
+custom:
+  dotenv:
+    include:
+      - NEXT_PUBLIC_SUPABASE_URL
+      - SUPABASE_SERVICE_ROLE_KEY
+      - ENCRYPTION_KEY
+      - NEXT_PUBLIC_APP_URL
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ap-south-1   # Mumbai
+  timeout: 900          # 15 minutes (max Lambda timeout)
+  memorySize: 512       # MB — increase if needed for large repos
+  environment:
+    # Supabase
+    NEXT_PUBLIC_SUPABASE_URL: ${env:NEXT_PUBLIC_SUPABASE_URL}
+    SUPABASE_SERVICE_ROLE_KEY: ${env:SUPABASE_SERVICE_ROLE_KEY}
+    # Encryption
+    ENCRYPTION_KEY: ${env:ENCRYPTION_KEY}
+    # App URL (for callbacks — use your Vercel URL)
+    NEXT_PUBLIC_APP_URL: ${env:NEXT_PUBLIC_APP_URL}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - !GetAtt PlatformMessageQueue.Arn
+
+functions:
+  processMessage:
+    handler: dist/lambda/handler.handler
+    events:
+      - sqs:
+          arn: !GetAtt PlatformMessageQueue.Arn
+          batchSize: 1                    # Process one message at a time
+          maximumBatchingWindow: 0        # No batching delay
+
+resources:
+  Resources:
+    PlatformMessageQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: codeteel-platform-messages
+        VisibilityTimeout: 960           # Slightly more than Lambda timeout (900+60)
+        MessageRetentionPeriod: 86400    # Keep messages for 24 hours
+        ReceiveMessageWaitTimeSeconds: 5 # Long polling
+
+  Outputs:
+    QueueUrl:
+      Value: !Ref PlatformMessageQueue
+      Description: SQS Queue URL — set this as CODETEEL_SQS_QUEUE_URL in Vercel env
+    QueueArn:
+      Value: !GetAtt PlatformMessageQueue.Arn
+      Description: SQS Queue ARN
+
+plugins:
+  - serverless-dotenv-plugin
+
+package:
+  patterns:
+    - '!**'
+    - 'dist/lambda/**'

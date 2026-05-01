@@ -152,7 +152,7 @@ export async function POST(request: Request, { params }: RouteParams) {
       },
       body: JSON.stringify({
         title,
-        body: `${prBody || ""}\n\n---\n*Created by CodeBot*`,
+        body: `${prBody || ""}\n\n---\n*Created by Codeteel*`,
         head,
         base,
       }),

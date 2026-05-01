@@ -857,7 +857,7 @@ async function createPullRequest(
       },
       body: JSON.stringify({
         title,
-        body: `${body}\n\n---\n*Created by CodeBot*`,
+        body: `${body}\n\n---\n*Created by Codeteel*`,
         head: state.branchName,
         base: context.defaultBranch,
       }),
