@@ -206,12 +206,13 @@ export function ChatInterface({
             messages={messagesForList}
             streamingContent={state.streamingContent}
             toolActivity={state.toolActivity}
-            isLoading={state.isRunning}
+            isLoading={state.isRunning || state.isLoadingBranches}
             executionProgress={state.executionProgress}
             onApprove={handleApprove}
             onReject={handleReject}
             isRunning={state.isRunning}
             workingBranch={state.workingBranch}
+            isLoadingBranches={state.isLoadingBranches}
           />
         </div>
 

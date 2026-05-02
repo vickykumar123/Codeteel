@@ -51,6 +51,7 @@ export interface OrchestratorState {
   currentPlan: Plan | null;
   workingBranch: string | null;
   branchSelectionRequest: BranchSelectionRequest | null;
+  isLoadingBranches: boolean;
   filesChanged: string[];
   prUrl: string | null;
   prNumber: number | null;
@@ -293,6 +294,8 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
   );
   const [branchSelectionRequest, setBranchSelectionRequest] =
     useState<BranchSelectionRequest | null>(null);
+  const [isLoadingBranches, setIsLoadingBranches] = useState(false);
+  const branchLoadingRef = useRef(false);
   const [filesChanged, setFilesChanged] = useState<string[]>(
     initialExecutionState?.filesChanged || []
   );
@@ -468,7 +471,8 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
 
         case "branch_selection_required":
           // The orchestrator sends empty availableBranches — fetch real list from API
-          setToolActivity("Loading branches...");
+          setIsLoadingBranches(true);
+          branchLoadingRef.current = true;
           executorRef.current
             .listBranches(repoId)
             .then((result) => {
@@ -478,12 +482,13 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
                 defaultBase: result.defaultBranch,
                 protectedBranches: result.protectedBranches,
               });
-              setToolActivity(null);
+              setIsLoadingBranches(false);
+              branchLoadingRef.current = false;
             })
             .catch(() => {
-              // Fallback: show modal with whatever the event had
               setBranchSelectionRequest(event.request);
-              setToolActivity(null);
+              setIsLoadingBranches(false);
+              branchLoadingRef.current = false;
             });
           break;
 
@@ -722,10 +727,19 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
 
         // Add assistant response to messages
         if (result.response) {
+          // Normalize branch selection messages (LLM sometimes writes verbose text)
+          let responseContent = result.response
+            .replace(/\n*\s*CONFIRMED\.?\s*$/i, "")
+            .replace(/\n*\s*END\.?\s*$/i, "")
+            .trim();
+          if (/confirm.*branch|select.*branch|branch.*you.*like|choose.*branch/i.test(responseContent)) {
+            responseContent = "Please select a branch to continue.";
+          }
+
           const assistantMsg: Message = {
             id: `assistant-${Date.now()}`,
             role: "assistant",
-            content: result.response,
+            content: responseContent,
             created_at: new Date().toISOString(),
           };
           setMessages((prev) => [...prev, assistantMsg]);
@@ -1005,6 +1019,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
       currentPlan,
       workingBranch,
       branchSelectionRequest,
+      isLoadingBranches,
       filesChanged,
       prUrl,
       prNumber,

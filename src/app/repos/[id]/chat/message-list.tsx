@@ -29,6 +29,7 @@ interface MessageListProps {
   onReject?: () => void;
   isRunning?: boolean;
   workingBranch?: string | null;
+  isLoadingBranches?: boolean;
 }
 
 // ===========================================
@@ -89,6 +90,7 @@ export function MessageList({
   onReject,
   isRunning,
   workingBranch,
+  isLoadingBranches,
 }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -164,8 +166,21 @@ export function MessageList({
           </div>
         )}
 
+        {/* Branch loading indicator */}
+        {isLoadingBranches && (
+          <div className="flex gap-4">
+            <AiAvatar />
+            <div className="flex-1">
+              <div className="inline-flex items-center gap-2.5 bg-white dark:bg-gray-800 rounded-lg px-4 py-3 shadow-sm border border-gray-100 dark:border-gray-700">
+                <span className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full" />
+                <span className="text-sm text-gray-600 dark:text-gray-300">Loading branches...</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Loading indicator */}
-        {isLoading && !streamingContent && !toolActivity && (
+        {isLoading && !streamingContent && !toolActivity && !isLoadingBranches && (
           <div className="flex gap-4">
             <AiAvatar />
             <div className="flex-1">
