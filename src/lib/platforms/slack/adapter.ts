@@ -223,8 +223,14 @@ export class SlackAdapter implements PlatformAdapter {
         }
         break;
 
+      case "execution_start":
+        await this.sendText(channelId, "⚙️ Executing plan...", threadId);
+        break;
+
       case "step_complete": {
+        // Only show progress for multi-step plans (skip single step)
         const stepEvent = event as { stepIndex?: number; totalSteps?: number; description?: string };
+        if ((stepEvent.totalSteps || 1) <= 1) break;
         await this.sendProgress(
           channelId,
           (stepEvent.stepIndex || 0) + 1,
@@ -247,8 +253,9 @@ export class SlackAdapter implements PlatformAdapter {
         if (event.content) {
           // Clean up LLM artifacts (some models append "CONFIRMED", "END", etc.)
           const cleanContent = (event.content as string)
-            .replace(/\n*CONFIRMED\s*$/i, "")
-            .replace(/\n*END\s*$/i, "")
+            .replace(/\n*\s*CONFIRMED\.?\s*$/i, "")
+            .replace(/\n*\s*END\.?\s*$/i, "")
+            .replace(/\n+CONFIRMED\n*/gi, "\n")
             .trim();
           if (cleanContent) {
             await this.sendText(channelId, cleanContent, threadId);

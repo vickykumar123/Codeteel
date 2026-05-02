@@ -79,8 +79,8 @@ export function Integrations({ slackInstallations }: IntegrationsProps) {
         </div>
       )}
 
-      {/* Telegram - Coming soon */}
-      <div className="flex items-center justify-between p-4 border-2 rounded-lg border-gray-200 dark:border-gray-600 opacity-50">
+      {/* Telegram */}
+      <div className="flex items-center justify-between p-4 border-2 rounded-lg border-gray-200 dark:border-gray-600">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-[#0088cc] rounded-lg flex items-center justify-center">
             <svg viewBox="0 0 24 24" className="w-6 h-6 text-white" fill="currentColor">
@@ -89,9 +89,18 @@ export function Integrations({ slackInstallations }: IntegrationsProps) {
           </div>
           <div>
             <div className="font-medium text-gray-900 dark:text-white">Telegram</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">Coming soon</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Go to any repo page and click "Connect Telegram" to link a chat
+            </div>
           </div>
         </div>
+
+        <Link
+          href="/guides/telegram"
+          className="text-xs px-3 py-1 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 transition-colors"
+        >
+          Guide
+        </Link>
       </div>
 
       {/* Discord - Coming soon */}

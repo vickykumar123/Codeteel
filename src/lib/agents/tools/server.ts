@@ -382,17 +382,24 @@ export class ServerToolExecutor implements ToolExecutor {
     const fullName = await this.getRepoFullName(repoId);
     const { owner, repo } = this.splitRepo(fullName);
 
-    const { data: branches } = await octokit.repos.listBranches({ owner, repo, per_page: 100 });
-    const { data: repoData } = await octokit.repos.get({ owner, repo });
+    // Get branches and default branch from DB (avoid extra GitHub API call)
+    const [branchesResult, repoResult] = await Promise.all([
+      octokit.repos.listBranches({ owner, repo, per_page: 100 }),
+      this.adminClient
+        .from("repositories")
+        .select("default_branch")
+        .eq("id", repoId)
+        .single(),
+    ]);
 
     return {
-      branches: branches.map(b => ({
+      branches: branchesResult.data.map(b => ({
         name: b.name,
         sha: b.commit.sha,
         protected: b.protected,
       })),
-      defaultBranch: repoData.default_branch,
-      protectedBranches: branches.filter(b => b.protected).map(b => b.name),
+      defaultBranch: repoResult.data?.default_branch || "main",
+      protectedBranches: branchesResult.data.filter(b => b.protected).map(b => b.name),
     };
   }
 

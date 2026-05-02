@@ -332,6 +332,8 @@ export async function handlePlatformMessage(
   }, STILL_PROCESSING_INTERVAL);
 
   let planSentInThisRound = false;
+  let branchSelectionSent = false;
+  const pendingActions: { branchSelection?: { suggestedName: string } } = {};
 
   const onEvent = async (event: StreamEvent) => {
     lastActivityTime = Date.now();
@@ -360,25 +362,21 @@ export async function handlePlatformMessage(
       return;
     }
 
-    // Branch selection — fetch real branches
+    // Suppress orchestrator text about branch selection — the buttons handle it
+    if (event.type === "message" && branchSelectionSent) {
+      branchSelectionSent = false;
+      return;
+    }
+    if (event.type === "message" && (event.content as string)?.includes("select or create a branch")) {
+      return; // Always suppress — branch selection buttons or error already sent
+    }
+
+    // Branch selection — defer to after orchestrator returns (so we can await it)
     if (event.type === "branch_selection_required") {
-      try {
-        const branchResult = await executor.listBranches(context.repoId);
-        const branchNames = branchResult.branches
-          .filter(b => !b.protected && b.name !== "main" && b.name !== "master")
-          .map(b => b.name);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const req = event.request as any;
-        await adapter.sendBranchSelection(
-          msg.channelId,
-          branchNames,
-          req?.suggestedName || "feature/changes",
-          threadTs,
-        );
-      } catch (err) {
-        console.error(`[${msg.platform}] Failed to fetch branches:`, err);
-        await adapter.sendError(msg.channelId, "Failed to fetch branches", threadTs);
-      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const req = event.request as any;
+      pendingActions.branchSelection = { suggestedName: req?.suggestedName || "feature/changes" };
+      branchSelectionSent = true;
       return;
     }
 
@@ -399,10 +397,32 @@ export async function handlePlatformMessage(
       initialState,
     );
 
+    // Send deferred branch selection (now we can properly await)
+    if (pendingActions.branchSelection) {
+      const branchReq = pendingActions.branchSelection;
+      try {
+        const branchResult = await executor.listBranches(context.repoId);
+        const branchNames = branchResult.branches
+          .filter(b => !b.protected && b.name !== "main" && b.name !== "master")
+          .map(b => b.name);
+        console.log(`[${msg.platform}] Branches: ${branchResult.branches.length} total, ${branchNames.length} after filter`);
+        await adapter.sendBranchSelection(
+          msg.channelId,
+          branchNames,
+          branchReq.suggestedName,
+          threadTs,
+        );
+      } catch (err) {
+        console.error(`[${msg.platform}] Failed to fetch branches:`, err);
+        await adapter.sendError(msg.channelId, "Failed to fetch branches. Use /branch feature/xyz to set a branch manually.", threadTs);
+      }
+    }
+
     // Clean up LLM artifacts
     const cleanResponse = result.response
-      ?.replace(/\n*CONFIRMED\s*$/i, "")
-      .replace(/\n*END\s*$/i, "")
+      ?.replace(/\n*\s*CONFIRMED\.?\s*$/i, "")
+      .replace(/\n*\s*END\.?\s*$/i, "")
+      .replace(/\n+CONFIRMED\n*/gi, "\n")
       .trim();
 
     console.log(`[${msg.platform}] Response: "${cleanResponse?.slice(0, 300)}"`);

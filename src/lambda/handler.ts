@@ -27,8 +27,10 @@ async function processRecord(record: SQSRecord): Promise<void> {
 
     if (payload.platform === "slack") {
       await processSlackMessage(payload);
+    } else if (payload.platform === "telegram") {
+      await processTelegramMessage(payload);
     }
-    // Future: telegram, discord handlers here
+    // Future: discord handler here
   } catch (err) {
     console.error(`[Lambda] Error processing message:`, err);
     // Don't throw — SQS would retry. Log and move on.
@@ -84,6 +86,38 @@ async function processSlackMessage(payload: PlatformMessagePayload): Promise<voi
         channelId: payload.channelId,
         teamId: payload.teamId,
         threadId: payload.threadId,
+        text: payload.text,
+        interactionData: payload.interactionData,
+      },
+      botToken,
+    );
+  }
+}
+
+async function processTelegramMessage(payload: PlatformMessagePayload): Promise<void> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) {
+    console.error("[Lambda] TELEGRAM_BOT_TOKEN not configured");
+    return;
+  }
+
+  const { handleTelegramMessage, handleTelegramCallback } = await import("../lib/platforms/telegram/handler");
+
+  if (payload.operation === "interactive" && payload.action) {
+    await handleTelegramCallback(
+      "", // callbackQueryId not available from SQS — already answered in webhook
+      payload.channelId,
+      payload.action.messageTs,
+      payload.action.value,
+      payload.userId,
+      botToken,
+    );
+  } else {
+    await handleTelegramMessage(
+      {
+        platform: "telegram",
+        userId: payload.userId,
+        channelId: payload.channelId,
         text: payload.text,
         interactionData: payload.interactionData,
       },

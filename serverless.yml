@@ -11,6 +11,7 @@ custom:
       - SUPABASE_SERVICE_ROLE_KEY
       - ENCRYPTION_KEY
       - NEXT_PUBLIC_APP_URL
+      - TELEGRAM_BOT_TOKEN
 
 provider:
   name: aws
@@ -24,8 +25,10 @@ provider:
     SUPABASE_SERVICE_ROLE_KEY: ${env:SUPABASE_SERVICE_ROLE_KEY}
     # Encryption
     ENCRYPTION_KEY: ${env:ENCRYPTION_KEY}
-    # App URL (for callbacks — use your Vercel URL)
+    # App URL
     NEXT_PUBLIC_APP_URL: ${env:NEXT_PUBLIC_APP_URL}
+    # Telegram
+    TELEGRAM_BOT_TOKEN: ${env:TELEGRAM_BOT_TOKEN}
 
   iam:
     role:
