@@ -29,7 +29,7 @@ import type {
 import { runSearch } from "./search";
 import { runPlanner } from "./planner";
 import { runExecutor } from "./executor";
-import { reviewPR, reviewIssue, listOpenPRs, listOpenIssues } from "./reviewer";
+import { reviewPR, reviewIssue, listOpenPRs, listOpenIssues, securityScan } from "./reviewer";
 import {
   compressConversation,
   buildCompressedMessages,
@@ -247,6 +247,7 @@ const orchestratorSystemPrompt = `You are Codeteel, an AI coding assistant. You 
 | web_fetch | User provides a URL to read |
 | review_pr | Review a PR (with number) or list open PRs (without) |
 | review_issue | Review an issue (with number) or list open issues (without) |
+| security_scan | Scan codebase for security vulnerabilities (optional path to scope the scan) |
 
 ## Routing
 
@@ -259,6 +260,7 @@ const orchestratorSystemPrompt = `You are Codeteel, an AI coding assistant. You 
 7. **Create PR** → create_pr
 8. **Web search/fetch** → only when user explicitly asks
 9. **Review PR/issue** ("review PR", "review issue", "show PRs", "show issues", "list PRs", "list issues", "open PRs", "open issues") → MUST call review_pr or review_issue
+10. **Security scan** ("check security", "security audit", "scan for vulnerabilities", "find security issues") → MUST call security_scan
 
 ## Rules
 - ALWAYS delegate — never answer code questions yourself, never describe code changes without calling delegate_to_planner
@@ -444,6 +446,24 @@ const orchestratorTools: Tool[] = [
         number: {
           type: "number",
           description: "Issue number to review. Omit to list all open issues.",
+        },
+      },
+    },
+  },
+  {
+    name: "security_scan",
+    description:
+      "Scan for CRITICAL and HIGH security vulnerabilities. Can scan the codebase, a specific path, or a PR diff.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: {
+          type: "string",
+          description: "Optional path to scope the scan (e.g., 'src/api'). Omit to scan the entire codebase.",
+        },
+        pr_number: {
+          type: "number",
+          description: "Optional PR number to scan only the changed files in that PR.",
         },
       },
     },
@@ -1053,6 +1073,27 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
             };
             return { response: reviewResult.review, executionState };
           }
+        }
+
+      // =============================================
+      // SECURITY SCAN
+      // =============================================
+      } else if (toolCall.name === "security_scan") {
+        const scanPath = toolCall.arguments.path as string | undefined;
+        const scanPR = toolCall.arguments.pr_number as number | undefined;
+        const scanLabel = scanPR ? `PR #${scanPR}` : scanPath || "codebase";
+        onEvent({ type: "thinking", message: `Scanning ${scanLabel} for security issues...` });
+
+        const scanResult = await securityScan(context, executor, chatFn, onEvent, scanPath, scanPR);
+        if (scanResult.error) {
+          result = scanResult.error;
+          error = true;
+        } else {
+          onEvent({ type: "message", content: scanResult.report });
+          const executionState: PersistedExecutionState = {
+            filesChanged, currentPlan, prCreated, prUrl, prNumber: prNumber as number, searchJournal,
+          };
+          return { response: scanResult.report, executionState };
         }
 
       } else {

@@ -337,6 +337,7 @@ Focus on:
 - Functions/classes defined in this chunk
 - Key logic and algorithms
 - Important variables and data structures
+- Any CRITICAL/HIGH security or performance issues (only if present)
 
 Keep the summary under 200 words. Be specific and technical.`,
     },
@@ -367,8 +368,9 @@ Create a unified summary that:
 - Lists all main functions/classes and what they do
 - Identifies key exports and dependencies
 - Removes redundancy from chunk summaries
+- Consolidates any CRITICAL/HIGH security or performance issues found across chunks (if any)
 
-Keep the final summary under 400 words. Be specific and technical.`,
+Keep the final summary under 450 words. Be specific and technical.`,
     },
     {
       role: "user",
@@ -394,8 +396,10 @@ Include:
 - Main functions/classes and what they do
 - Key exports
 - Dependencies/imports used
+- **Security issues** (CRITICAL/HIGH only): injection, XSS, auth bypass, exposed secrets, SSRF, insecure crypto. Skip if none found.
+- **Performance issues** (CRITICAL/HIGH only): N+1 queries, unbounded loops, memory leaks, missing pagination, blocking I/O. Skip if none found.
 
-Keep the summary under 300 words. Be specific and technical.`,
+Keep the summary under 350 words. Be specific and technical.`,
       },
       {
         role: "user",

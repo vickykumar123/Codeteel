@@ -201,3 +201,137 @@ export async function listOpenIssues(
 
   return `**Open Issues (${issues.length}):**\n\n${list}\n\nSay "review issue #N" to review a specific issue.`;
 }
+
+// ===========================================
+// SECURITY SCAN
+// ===========================================
+
+const securityScanPrompt = `You are a security auditor. Your job is to scan code files for security vulnerabilities.
+
+Focus ONLY on CRITICAL and HIGH severity issues:
+
+**CRITICAL:**
+- Hardcoded secrets, API keys, passwords, tokens in source code
+- SQL injection (raw query construction with user input)
+- Command injection (exec/spawn with user input)
+- Authentication bypass (missing auth checks on sensitive routes)
+- Insecure deserialization
+- Path traversal (user input in file paths)
+
+**HIGH:**
+- XSS (unescaped user input in HTML/templates)
+- SSRF (fetching user-provided URLs without validation)
+- Insecure cryptography (weak algorithms, hardcoded IVs)
+- Missing CSRF protection on state-changing endpoints
+- Exposed stack traces or debug info in production
+- Overly permissive CORS
+- Missing rate limiting on auth endpoints
+
+**DO NOT report:**
+- Code style issues
+- Missing type annotations
+- Low-severity warnings
+- Best practice suggestions that aren't security-related
+
+## Output Format:
+For each issue found:
+1. **Severity**: CRITICAL or HIGH
+2. **File**: exact file path
+3. **Line/Area**: where the issue is
+4. **Issue**: what the vulnerability is
+5. **Risk**: what an attacker could do
+6. **Fix**: specific remediation
+
+If no CRITICAL or HIGH issues are found, say "No critical or high security issues found."`;
+
+export async function securityScan(
+  context: AgentContext,
+  executor: ToolExecutor,
+  chatFn: ChatFn,
+  onEvent: (event: StreamEvent) => void,
+  targetPath?: string,
+  prNumber?: number,
+): Promise<{ report: string; error?: string }> {
+  onEvent({ type: "thinking", message: "Starting security scan..." });
+
+  try {
+    let codeContent = "";
+    let filesScanned = 0;
+
+    // If PR number provided, scan the PR diff
+    if (prNumber) {
+      const pr = await executor.getPRDiff(context.repoId, prNumber);
+      onEvent({ type: "thinking", message: `Scanning PR #${prNumber} (${pr.files.length} changed files)...` });
+
+      for (const file of pr.files) {
+        const patch = file.patch.length > MAX_TOOL_RESULT_CHARS
+          ? file.patch.slice(0, MAX_TOOL_RESULT_CHARS) + "\n... (truncated)"
+          : file.patch;
+        codeContent += `\n### ${file.filename} (${file.status}, +${file.additions}/-${file.deletions})\n\`\`\`diff\n${patch}\n\`\`\`\n`;
+        filesScanned++;
+        if (codeContent.length > 50_000) { codeContent += "\n... (remaining files skipped)"; break; }
+      }
+
+      if (filesScanned === 0) return { report: "No changed files in this PR." };
+    } else {
+      // Step 1: Read summaries to find files with security issues flagged
+      const allFiles = await executor.listCodeDefinitions(context.repoId, { pattern: targetPath || "", limit: 200 });
+      if (allFiles.length === 0) return { report: "No files found to scan." };
+
+      const securityPattern = /security|vulnerab|inject|xss|csrf|ssrf|auth.*bypass|hardcoded.*secret|hardcoded.*key|hardcoded.*password|exposed|insecure|unsafe|unescaped|path.*traversal|command.*inject|sql.*inject/i;
+
+      const flaggedFiles = allFiles.filter(f => f.summary && securityPattern.test(f.summary));
+      const securityNamePattern = /auth|login|token|password|secret|api|route|middleware|webhook|crypto|session|admin|upload|config|oauth|jwt/i;
+      const sensitiveFiles = allFiles.filter(f => !flaggedFiles.includes(f) && securityNamePattern.test(f.path));
+
+      // Combine: flagged by summary first, then sensitive by name
+      const filesToScan = [...flaggedFiles, ...sensitiveFiles].slice(0, 30);
+
+      onEvent({ type: "thinking", message: `Found ${flaggedFiles.length} files with security flags, ${sensitiveFiles.length} sensitive files. Reading ${filesToScan.length} files...` });
+
+      // Step 2: Read full code only for flagged/sensitive files
+      for (const file of filesToScan) {
+        const fileData = await executor.readFile(context.repoId, { path: file.path });
+        if (!fileData) continue;
+
+        const content = fileData.content.length > MAX_TOOL_RESULT_CHARS
+          ? fileData.content.slice(0, MAX_TOOL_RESULT_CHARS) + "\n... (truncated)"
+          : fileData.content;
+        const summaryNote = flaggedFiles.includes(file) ? `\n**Summary flag:** ${file.summary?.match(securityPattern)?.[0] || "security issue noted"}` : "";
+        codeContent += `\n### ${file.path} (${file.language})${summaryNote}\n\`\`\`\n${content}\n\`\`\`\n`;
+        filesScanned++;
+        if (codeContent.length > 50_000) { codeContent += "\n... (remaining files skipped)"; break; }
+      }
+
+      // If no flagged or sensitive files found, report clean
+      if (filesScanned === 0) {
+        return { report: `Scanned ${allFiles.length} file summaries — no security issues flagged. The codebase appears clean.\n\nNote: Run a full re-index to ensure summaries include security analysis.` };
+      }
+    }
+
+    if (filesScanned === 0) {
+      return { report: "No code files found to scan." };
+    }
+
+    let systemPrompt = securityScanPrompt;
+    if (context.customInstructions) {
+      systemPrompt += `\n\n## CUSTOM INSTRUCTIONS (also check against these):\n${context.customInstructions}`;
+    }
+
+    const scopeLabel = prNumber ? `PR #${prNumber}` : targetPath || "entire codebase";
+    const userPrompt = `Scan these ${filesScanned} files for CRITICAL and HIGH security vulnerabilities:\n\n**Repository:** ${context.repoFullName}\n**Scope:** ${scopeLabel}\n${codeContent}`;
+
+    const messages: LLMChatMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ];
+
+    onEvent({ type: "thinking", message: `Analyzing ${filesScanned} files...` });
+
+    const response = await chatFn(messages);
+    return { report: response.content };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return { report: "", error: `Security scan failed: ${msg}` };
+  }
+}
