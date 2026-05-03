@@ -103,8 +103,8 @@ export function Integrations({ slackInstallations }: IntegrationsProps) {
         </Link>
       </div>
 
-      {/* Discord - Coming soon */}
-      <div className="flex items-center justify-between p-4 border-2 rounded-lg border-gray-200 dark:border-gray-600 opacity-50">
+      {/* Discord */}
+      <div className="flex items-center justify-between p-4 border-2 rounded-lg border-gray-200 dark:border-gray-600">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-[#5865F2] rounded-lg flex items-center justify-center">
             <svg viewBox="0 0 24 24" className="w-6 h-6 text-white" fill="currentColor">
@@ -113,8 +113,36 @@ export function Integrations({ slackInstallations }: IntegrationsProps) {
           </div>
           <div>
             <div className="font-medium text-gray-900 dark:text-white">Discord</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">Coming soon</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              Add bot to your server, then connect a channel from the repo page
+            </div>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link
+            href="/guides/discord"
+            className="text-xs px-3 py-1 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded hover:bg-gray-200 transition-colors"
+          >
+            Guide
+          </Link>
+          {process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID ? (
+            <a
+              href={`https://discord.com/api/oauth2/authorize?client_id=${process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID}&permissions=51200&scope=bot%20applications.commands`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs px-3 py-1 bg-[#5865F2] text-white rounded hover:bg-[#4752C4] transition-colors"
+            >
+              Add to Discord
+            </a>
+          ) : (
+            <a
+              href="/api/discord/oauth"
+              className="text-xs px-3 py-1 bg-[#5865F2] text-white rounded hover:bg-[#4752C4] transition-colors"
+            >
+              Add to Discord
+            </a>
+          )}
         </div>
       </div>
     </div>

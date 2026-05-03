@@ -12,6 +12,7 @@ custom:
       - ENCRYPTION_KEY
       - NEXT_PUBLIC_APP_URL
       - TELEGRAM_BOT_TOKEN
+      - DISCORD_BOT_TOKEN
 
 provider:
   name: aws
@@ -29,6 +30,8 @@ provider:
     NEXT_PUBLIC_APP_URL: ${env:NEXT_PUBLIC_APP_URL}
     # Telegram
     TELEGRAM_BOT_TOKEN: ${env:TELEGRAM_BOT_TOKEN}
+    # Discord
+    DISCORD_BOT_TOKEN: ${env:DISCORD_BOT_TOKEN}
 
   iam:
     role:

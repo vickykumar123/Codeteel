@@ -29,8 +29,9 @@ async function processRecord(record: SQSRecord): Promise<void> {
       await processSlackMessage(payload);
     } else if (payload.platform === "telegram") {
       await processTelegramMessage(payload);
+    } else if (payload.platform === "discord") {
+      await processDiscordMessage(payload);
     }
-    // Future: discord handler here
   } catch (err) {
     console.error(`[Lambda] Error processing message:`, err);
     // Don't throw — SQS would retry. Log and move on.
@@ -116,6 +117,45 @@ async function processTelegramMessage(payload: PlatformMessagePayload): Promise<
     await handleTelegramMessage(
       {
         platform: "telegram",
+        userId: payload.userId,
+        channelId: payload.channelId,
+        text: payload.text,
+        interactionData: payload.interactionData,
+      },
+      botToken,
+    );
+  }
+}
+
+async function processDiscordMessage(payload: PlatformMessagePayload): Promise<void> {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) {
+    console.error("[Lambda] DISCORD_BOT_TOKEN not configured");
+    return;
+  }
+
+  const { handleDiscordMessage, handleDiscordButton, handleDiscordCommand } = await import("../lib/platforms/discord/handler");
+
+  if (payload.operation === "interactive" && payload.action) {
+    await handleDiscordButton(
+      payload.channelId,
+      payload.action.messageTs,
+      payload.action.value,
+      payload.userId,
+      botToken,
+    );
+  } else if (payload.action?.actionId === "command") {
+    const commandName = payload.action.value;
+    const args = payload.text.replace(`/${commandName}`, "").trim();
+    const response = await handleDiscordCommand(payload.channelId, commandName, args, payload.userId, botToken);
+
+    const { DiscordAdapter } = await import("../lib/platforms/discord/adapter");
+    const adapter = new DiscordAdapter(botToken);
+    await adapter.sendText(payload.channelId, response);
+  } else {
+    await handleDiscordMessage(
+      {
+        platform: "discord",
         userId: payload.userId,
         channelId: payload.channelId,
         text: payload.text,

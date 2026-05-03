@@ -21,10 +21,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { repoId } = await request.json();
+  const { repoId, platform: requestedPlatform } = await request.json();
   if (!repoId) {
     return NextResponse.json({ error: "repoId required" }, { status: 400 });
   }
+  const platform = requestedPlatform || "telegram";
 
   // Verify user owns the repo
   const adminClient: AnyClient = createAdminClient();
@@ -49,13 +50,18 @@ export async function POST(request: NextRequest) {
       user_id: user.id,
       repo_id: repoId,
       token,
-      platform: "telegram",
+      platform,
       expires_at: expiresAt,
     });
 
-  // Build Telegram deep link
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME || "CodeteeBot";
-  const link = `https://t.me/${botUsername}?start=${token}`;
+  // Build platform-specific link
+  let link: string;
+  if (platform === "discord") {
+    link = token; // Discord: user copies token and runs /connect TOKEN
+  } else {
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME || "CodeteelBot";
+    link = `https://t.me/${botUsername}?start=${token}`;
+  }
 
   return NextResponse.json({
     link,
