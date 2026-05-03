@@ -291,6 +291,7 @@ These files have been modified on the working branch. When reading them, you'll 
 
   let iterations = 0;
   const actionHistory: string[] = [];
+  let consecutiveErrors = 0;
 
   onEvent({ type: "thinking", message: "Exploring codebase for planning..." });
 
@@ -528,14 +529,26 @@ These files have been modified on the working branch. When reading them, you'll 
           });
         }
 
-        // Append ReAct reflection nudge to search results —
-        // encourages think → create_plan instead of search → search → search
-        const reflectionNudge = "\n\n[REFLECT: Do you now have enough context to call create_plan? " +
-          "If yes, call create_plan immediately. If unsure, use the think tool to assess what you know vs what's missing before searching again.]";
+        // Track consecutive errors
+        if (toolResult.error) {
+          consecutiveErrors++;
+        } else {
+          consecutiveErrors = 0;
+        }
+
+        // Append ONE nudge per tool result (never both — avoids conflicting signals)
+        let resultContent = toolResult.content;
+
+        if (toolResult.error && consecutiveErrors >= 2) {
+          resultContent += "\n\n⚠️ 2 consecutive errors. Use think to assess what's wrong, or call create_plan with what you have.";
+        } else if (!toolResult.error && iterations > 3) {
+          // Only add reflect nudge after a few iterations (not on every result)
+          resultContent += "\n\n[REFLECT: Do you have enough context to call create_plan? If yes, call it now.]";
+        }
 
         messages.push({
           role: "tool",
-          content: toolResult.content + reflectionNudge,
+          content: resultContent,
           tool_call_id: toolCall.id,
           name: toolCall.name,
         });

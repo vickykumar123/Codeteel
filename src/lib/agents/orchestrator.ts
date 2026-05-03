@@ -133,12 +133,35 @@ function recoverToolCallFromText(
         },
       };
     }
+    if (Array.isArray(parsed.paths) && parsed.paths.length > 0) {
+      return {
+        id: `recovered-${Date.now()}`,
+        type: "function" as const,
+        function: {
+          name: "delete_files",
+          arguments: JSON.stringify({
+            paths: parsed.paths,
+            ...(parsed.reason ? { reason: parsed.reason } : {}),
+          }),
+        },
+      };
+    }
+    if (parsed.title && typeof parsed.title === "string" && parsed.body && typeof parsed.body === "string") {
+      return {
+        id: `recovered-${Date.now()}`,
+        type: "function" as const,
+        function: {
+          name: "create_pr",
+          arguments: JSON.stringify({ title: parsed.title, body: parsed.body }),
+        },
+      };
+    }
   } catch {
     // Not valid JSON — try other patterns
   }
 
   // Pattern 2: Content contains a JSON block (possibly with surrounding text)
-  const jsonMatch = trimmed.match(/\{[\s\S]*"(?:request|question)"[\s\S]*\}/);
+  const jsonMatch = trimmed.match(/\{[\s\S]*"(?:request|question|paths|title)"[\s\S]*\}/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
@@ -159,6 +182,29 @@ function recoverToolCallFromText(
           function: {
             name: "delegate_to_search",
             arguments: JSON.stringify({ question: parsed.question }),
+          },
+        };
+      }
+      if (Array.isArray(parsed.paths) && parsed.paths.length > 0) {
+        return {
+          id: `recovered-${Date.now()}`,
+          type: "function" as const,
+          function: {
+            name: "delete_files",
+            arguments: JSON.stringify({
+              paths: parsed.paths,
+              ...(parsed.reason ? { reason: parsed.reason } : {}),
+            }),
+          },
+        };
+      }
+      if (parsed.title && parsed.body) {
+        return {
+          id: `recovered-${Date.now()}`,
+          type: "function" as const,
+          function: {
+            name: "create_pr",
+            arguments: JSON.stringify({ title: parsed.title, body: parsed.body }),
           },
         };
       }
@@ -513,6 +559,7 @@ export async function runOrchestrator(
   const allTools = orchestratorTools;
   let iterations = 0;
   const actionHistory: string[] = [];
+  let consecutiveErrors = 0;
 
   // Initialize from persisted state
   let currentPlan: Plan | undefined = initialState?.currentPlan;
@@ -1103,6 +1150,19 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
 
       onEvent({ type: "tool_result", tool: toolCall.name, result, error });
 
+      // Track consecutive errors
+      if (error) {
+        consecutiveErrors++;
+      } else {
+        consecutiveErrors = 0;
+      }
+
+      // Nudge after 2 consecutive errors
+      let toolResult = result;
+      if (error && consecutiveErrors >= 2) {
+        toolResult += "\n\n⚠️ 2 consecutive errors occurred. Use the think tool to assess what's going wrong before retrying.";
+      }
+
       // Add tool result to messages
       if (
         messages[messages.length - 1]?.role !== "assistant" ||
@@ -1117,7 +1177,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
 
       messages.push({
         role: "tool",
-        content: result,
+        content: toolResult,
         tool_call_id: toolCall.id,
         name: toolCall.name,
       });
