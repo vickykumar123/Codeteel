@@ -1,7 +1,7 @@
 // Telegram Adapter
 // Converts orchestrator events → Telegram messages with inline keyboards
 
-import type { PlatformAdapter } from "../interface";
+import { splitMessage, type PlatformAdapter } from "../interface";
 import type { Plan, StreamEvent } from "@/lib/agents/types";
 
 const TELEGRAM_API = "https://api.telegram.org/bot";
@@ -55,9 +55,21 @@ export class TelegramAdapter implements PlatformAdapter {
   }
 
   async sendText(chatId: string, text: string, _threadId?: string): Promise<string | undefined> {
-    console.log(`[Telegram] sendText to ${chatId}: "${text.slice(0, 100)}..."`);
+    const MAX_LENGTH = 4096;
+
+    // Split long messages
+    if (text.length > MAX_LENGTH) {
+      const chunks = splitMessage(text, MAX_LENGTH);
+      let lastMessageId: string | undefined;
+      for (const chunk of chunks) {
+        const result = await this.sendMarkdown(chatId, chunk);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        lastMessageId = (result.result as any)?.message_id?.toString();
+      }
+      return lastMessageId;
+    }
+
     const result = await this.sendMarkdown(chatId, text);
-    console.log(`[Telegram] sendText result: ok=${result.ok}`);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (result.result as any)?.message_id?.toString();
   }

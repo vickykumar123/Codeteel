@@ -52,3 +52,41 @@ export interface PlatformAdapter {
   // Route a stream event to the appropriate send method
   handleEvent(channelId: string, event: StreamEvent, threadId?: string): Promise<void>;
 }
+
+// ===========================================
+// SHARED UTILITIES
+// ===========================================
+
+/**
+ * Split a long message into chunks that respect the platform's character limit.
+ * Splits at newlines when possible to keep formatting intact.
+ */
+export function splitMessage(text: string, maxLength: number): string[] {
+  if (text.length <= maxLength) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLength) {
+      chunks.push(remaining);
+      break;
+    }
+
+    // Try to split at a newline near the limit
+    let splitIndex = remaining.lastIndexOf("\n", maxLength);
+    if (splitIndex < maxLength * 0.5) {
+      // No good newline found — split at space
+      splitIndex = remaining.lastIndexOf(" ", maxLength);
+    }
+    if (splitIndex < maxLength * 0.3) {
+      // No good space found — hard split
+      splitIndex = maxLength;
+    }
+
+    chunks.push(remaining.slice(0, splitIndex));
+    remaining = remaining.slice(splitIndex).replace(/^\n/, ""); // Remove leading newline
+  }
+
+  return chunks;
+}

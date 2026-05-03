@@ -2,7 +2,7 @@
 // Converts orchestrator events → Slack Block Kit messages
 
 import { WebClient } from "@slack/web-api";
-import type { PlatformAdapter } from "../interface";
+import { splitMessage, type PlatformAdapter } from "../interface";
 import type { Plan, StreamEvent } from "@/lib/agents/types";
 
 export class SlackAdapter implements PlatformAdapter {
@@ -13,6 +13,23 @@ export class SlackAdapter implements PlatformAdapter {
   }
 
   async sendText(channelId: string, text: string, threadId?: string): Promise<string | undefined> {
+    const MAX_LENGTH = 4000;
+
+    // Split long messages
+    if (text.length > MAX_LENGTH) {
+      const chunks = splitMessage(text, MAX_LENGTH);
+      let lastTs: string | undefined;
+      for (const chunk of chunks) {
+        const result = await this.client.chat.postMessage({
+          channel: channelId,
+          text: chunk,
+          ...(threadId ? { thread_ts: threadId } : {}),
+        });
+        lastTs = result.ts;
+      }
+      return lastTs;
+    }
+
     const result = await this.client.chat.postMessage({
       channel: channelId,
       text,
