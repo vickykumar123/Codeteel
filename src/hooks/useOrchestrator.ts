@@ -296,6 +296,8 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
     useState<BranchSelectionRequest | null>(null);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
   const branchLoadingRef = useRef(false);
+  const pendingMessageRef = useRef<string | null>(null);
+  const workingBranchRef = useRef<string | null>(workingBranch);
   const [filesChanged, setFilesChanged] = useState<string[]>(
     initialExecutionState?.filesChanged || []
   );
@@ -470,6 +472,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
         }
 
         case "branch_selection_required":
+          // pendingMessageRef already set at start of runAgent
           // The orchestrator sends empty availableBranches — fetch real list from API
           setIsLoadingBranches(true);
           branchLoadingRef.current = true;
@@ -662,6 +665,9 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
     async (userMessage: string) => {
       if (isRunning) return;
 
+      // Save in case branch selection triggers and we need to re-send
+      pendingMessageRef.current = userMessage;
+
       setIsRunning(true);
       setError(null);
       setStreamingContent("");
@@ -686,7 +692,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
           githubToken: "", // Not needed (goes through API proxy)
           repoFullName,
           defaultBranch,
-          workingBranch: workingBranch || undefined,
+          workingBranch: workingBranchRef.current || undefined,
           messages: agentMessages,
           llmConfig: {
             provider: llmProvider as LLMConfig["provider"],
@@ -930,6 +936,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
         }
 
         setWorkingBranch(branchName);
+        workingBranchRef.current = branchName;
         setBranchSelectionRequest(null);
 
         // Save to conversation if it exists
@@ -942,11 +949,16 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
           });
         }
 
-        // If we were waiting on branch to approve, now approve
+        // Re-send the pending message or approve the plan
         if (currentPlan) {
-          // Small delay so state updates propagate
           setTimeout(() => {
             runAgent("yes, proceed with the plan");
+          }, 100);
+        } else if (pendingMessageRef.current) {
+          const msg = pendingMessageRef.current;
+          pendingMessageRef.current = null;
+          setTimeout(() => {
+            runAgent(msg);
           }, 100);
         }
       } catch (err) {
