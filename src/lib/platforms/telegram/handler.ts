@@ -397,6 +397,42 @@ export async function handleTelegramCommand(
       return;
     }
 
+    case "/security": {
+      const { data: connection } = await adminClient
+        .from("platform_connections")
+        .select("repo_id, user_id")
+        .eq("platform", "telegram")
+        .eq("platform_channel_id", String(chatId))
+        .single();
+
+      if (!connection) { await adapter.sendText(chatId, "Not connected."); return; }
+
+      let scanMessage: string;
+      let scanTarget: string;
+      const cleanArgs = args.trim();
+
+      if (cleanArgs.startsWith("pr ")) {
+        const prNum = cleanArgs.replace("pr ", "").trim();
+        scanMessage = `Check security of PR #${prNum}`;
+        scanTarget = `PR #${prNum}`;
+      } else if (cleanArgs) {
+        scanMessage = `Scan ${cleanArgs} for security vulnerabilities`;
+        scanTarget = cleanArgs;
+      } else {
+        scanMessage = "Check the codebase for security vulnerabilities";
+        scanTarget = "indexed codebase (main branch)";
+      }
+
+      await adapter.sendText(chatId, `🔒 Security scan started on *${scanTarget}*...`);
+
+      // Process as a regular message through the handler
+      await handleTelegramMessage(
+        { platform: "telegram", userId: String(telegramUserId), channelId: String(chatId), text: scanMessage },
+        botToken,
+      );
+      return;
+    }
+
     case "/help":
     default: {
       await adapter.sendText(
@@ -415,6 +451,11 @@ export async function handleTelegramCommand(
           "/branch create feature/xyz — Create and switch",
           "/branches — List all branches",
           "/reset — Clear working branch",
+          "",
+          "🔒 *Security:*",
+          "/security — Scan codebase (main branch)",
+          "/security src/api — Scan specific path",
+          "/security pr 5 — Scan PR #5 diff",
           "",
           "🧹 *Other:*",
           "/clear — Clear conversation history",

@@ -513,6 +513,60 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    case "security": {
+      const { data: connection } = await adminClient
+        .from("platform_connections")
+        .select("repo_id, user_id")
+        .eq("platform", "slack")
+        .eq("platform_channel_id", channelId)
+        .single();
+
+      if (!connection) {
+        return NextResponse.json({ response_type: "ephemeral", text: "Not connected to a repository." });
+      }
+
+      // Parse: /codeteel security, /codeteel security src/api, /codeteel security pr 5
+      const securityArgs = args.join(" ").trim();
+      let scanMessage: string;
+
+      if (securityArgs.startsWith("pr ")) {
+        const prNum = securityArgs.replace("pr ", "").trim();
+        scanMessage = `Check security of PR #${prNum}`;
+      } else if (securityArgs) {
+        scanMessage = `Scan ${securityArgs} for security vulnerabilities`;
+      } else {
+        scanMessage = "Check the codebase for security vulnerabilities";
+      }
+
+      // Push to SQS for Lambda processing (security scan takes time)
+      const { decrypt: decryptToken } = await import("@/lib/crypto");
+      const { data: installation } = await adminClient
+        .from("slack_installations")
+        .select("bot_token")
+        .eq("team_id", teamId)
+        .single();
+
+      if (installation?.bot_token) {
+        try {
+          const { pushToQueue } = await import("@/lib/platforms/queue");
+          await pushToQueue({
+            operation: "event",
+            platform: "slack",
+            userId: slackUserId,
+            channelId,
+            teamId,
+            text: scanMessage,
+          });
+        } catch { /* SQS not available */ }
+      }
+
+      const scanTarget = securityArgs.startsWith("pr ") ? `PR #${securityArgs.replace("pr ", "")}` : securityArgs || "indexed codebase (main branch)";
+      return NextResponse.json({
+        response_type: "in_channel",
+        text: `🔒 Security scan started on *${scanTarget}*. Results will appear shortly...`,
+      });
+    }
+
     case "help":
     default: {
       return NextResponse.json({
@@ -533,6 +587,11 @@ export async function POST(request: NextRequest) {
           "• `/codeteel branches` — List all branches",
           "• `/codeteel reset` — Clear working branch",
           "• `/codeteel clear` — Clear conversation history and start fresh",
+          "",
+          "*Security:*",
+          "• `/codeteel security` — Scan codebase (main branch)",
+          "• `/codeteel security src/api` — Scan specific path",
+          "• `/codeteel security pr 5` — Scan PR #5 diff",
           "",
           "*Usage:*",
           "Once connected, type your questions or change requests directly in the channel.",

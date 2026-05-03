@@ -324,6 +324,53 @@ export async function handleDiscordCommand(
       return "🧹 Conversation cleared. Send a new message to begin.";
     }
 
+    case "security": {
+      const { data: connection } = await adminClient
+        .from("platform_connections")
+        .select("repo_id, user_id")
+        .eq("platform", "discord")
+        .eq("platform_channel_id", channelId)
+        .single();
+
+      if (!connection) return "Not connected.";
+
+      let scanMessage: string;
+      let scanTarget: string;
+      const cleanArgs = args.trim();
+
+      if (cleanArgs.startsWith("pr ")) {
+        const prNum = cleanArgs.replace("pr ", "").trim();
+        scanMessage = `Check security of PR #${prNum}`;
+        scanTarget = `PR #${prNum}`;
+      } else if (cleanArgs) {
+        scanMessage = `Scan ${cleanArgs} for security vulnerabilities`;
+        scanTarget = cleanArgs;
+      } else {
+        scanMessage = "Check the codebase for security vulnerabilities";
+        scanTarget = "indexed codebase (main branch)";
+      }
+
+      // Push to SQS — security scan takes time
+      try {
+        const { pushToQueue } = await import("../queue");
+        await pushToQueue({
+          operation: "event",
+          platform: "discord",
+          userId: discordUserId,
+          channelId,
+          text: scanMessage,
+        });
+      } catch {
+        // Direct handler fallback
+        await handleDiscordMessage(
+          { platform: "discord", userId: discordUserId, channelId, text: scanMessage },
+          botToken,
+        );
+      }
+
+      return `🔒 Security scan started on **${scanTarget}**. Results will appear shortly...`;
+    }
+
     case "help":
     default:
       return [
@@ -343,6 +390,11 @@ export async function handleDiscordCommand(
         "`/branch create feature/xyz` — Create and switch",
         "`/branches` — List all branches",
         "`/reset` — Clear working branch",
+        "",
+        "🔒 **Security:**",
+        "`/security` — Scan codebase (main branch)",
+        "`/security src/api` — Scan specific path",
+        "`/security pr 5` — Scan PR #5 diff",
         "",
         "🧹 **Other:**",
         "`/clear` — Clear conversation history",
