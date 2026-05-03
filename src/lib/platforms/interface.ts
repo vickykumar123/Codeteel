@@ -49,6 +49,9 @@ export interface PlatformAdapter {
   // Send PR created notification
   sendPRCreated(channelId: string, prUrl: string, prNumber: number, threadId?: string): Promise<void>;
 
+  // Show typing indicator (platform-specific)
+  sendTyping?(channelId: string): Promise<void>;
+
   // Route a stream event to the appropriate send method
   handleEvent(channelId: string, event: StreamEvent, threadId?: string): Promise<void>;
 }

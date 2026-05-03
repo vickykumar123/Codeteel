@@ -156,6 +156,10 @@ export class DiscordAdapter implements PlatformAdapter {
     });
   }
 
+  async sendTyping(channelId: string): Promise<void> {
+    await this.callAPI("POST", `/channels/${channelId}/typing`, {});
+  }
+
   async editMessage(channelId: string, messageId: string, content: string): Promise<void> {
     await this.callAPI("PATCH", `/channels/${channelId}/messages/${messageId}`, {
       content,

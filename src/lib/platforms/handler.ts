@@ -318,18 +318,23 @@ export async function handlePlatformMessage(
       .eq("id", conversationId);
   }
 
-  // 9. Run orchestrator
+  // 9. Send typing indicator + run orchestrator
   console.log(`[${msg.platform}] Incoming message: "${msg.text}" | channel: ${msg.channelId} | user: ${msg.userId}`);
 
-  // "Still processing" timer
+  // Keep typing alive + send "still processing" after 30s
   let lastActivityTime = Date.now();
-  const STILL_PROCESSING_INTERVAL = 15_000;
-  const stillProcessingTimer = setInterval(async () => {
-    if (Date.now() - lastActivityTime > STILL_PROCESSING_INTERVAL) {
-      await adapter.sendText(msg.channelId, "⏳ Still processing your request...", threadTs).catch(() => {});
-      lastActivityTime = Date.now();
+  let stillProcessingSent = false;
+  const TYPING_INTERVAL = 4_000;
+  const STILL_PROCESSING_INTERVAL = 30_000;
+  const typingTimer = setInterval(async () => {
+    if (adapter.sendTyping) {
+      await adapter.sendTyping(msg.channelId).catch(() => {});
     }
-  }, STILL_PROCESSING_INTERVAL);
+    if (!stillProcessingSent && Date.now() - lastActivityTime > STILL_PROCESSING_INTERVAL) {
+      await adapter.sendText(msg.channelId, "⏳ Still processing your request...", threadTs).catch(() => {});
+      stillProcessingSent = true;
+    }
+  }, TYPING_INTERVAL);
 
   let planSentInThisRound = false;
   let branchSelectionSent = false;
@@ -456,7 +461,7 @@ export async function handlePlatformMessage(
     await adapter.sendError(msg.channelId, errorMsg, threadTs);
     return null;
   } finally {
-    clearInterval(stillProcessingTimer);
+    clearInterval(typingTimer);
     // Release processing lock
     if (conversationId) {
       try {

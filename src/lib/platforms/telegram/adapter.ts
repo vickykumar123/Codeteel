@@ -162,6 +162,10 @@ export class TelegramAdapter implements PlatformAdapter {
     });
   }
 
+  async sendTyping(chatId: string): Promise<void> {
+    await this.callAPI("sendChatAction", { chat_id: chatId, action: "typing" });
+  }
+
   async editMessage(chatId: string, messageId: string, text: string): Promise<void> {
     await this.callAPI("editMessageText", {
       chat_id: chatId,
