@@ -96,6 +96,8 @@ interface UseOrchestratorOptions {
 // ===========================================
 
 import { APPROVAL_PHRASES, REJECTION_PHRASES } from "@/lib/agents/constants";
+import { compressConversation } from "@/lib/agents/compression";
+import { securityScan, reviewPR, listOpenPRs } from "@/lib/agents/reviewer";
 
 function isApprovalText(message: string): boolean {
   const normalized = message.toLowerCase().trim();
@@ -117,6 +119,50 @@ function isRejectionText(message: string): boolean {
       normalized.startsWith(p + ".") ||
       normalized.startsWith(p + "!")
   );
+}
+
+// ===========================================
+// SLASH COMMANDS
+// ===========================================
+
+const HELP_TEXT = `**Available Commands:**
+
+| Command | Description |
+|---------|-------------|
+| \`/help\` | Show this help message |
+| \`/branch [name]\` | Switch branch or open branch selector |
+| \`/branches\` | List available branches |
+| \`/reset\` | Clear execution state (plan, files changed) |
+| \`/clear\` | Start a new conversation |
+| \`/security [path]\` | Security scan (full, scoped, or PR) |
+| \`/review pr [N]\` | Review a PR or list open PRs |
+| \`/compact\` | Compress conversation to save tokens |
+| \`/pr\` | Create PR for current changes |
+| \`/diff\` | Show all file changes in this conversation |
+| \`/undo\` | Revert last file change |
+
+**Examples:**
+- \`/security src/auth/\` — scan auth directory
+- \`/security pr 42\` — scan PR #42 diff
+- \`/review pr 15\` — review PR #15
+- \`/branch feature/new-api\` — switch to branch`;
+
+/** Check if text is a slash command */
+function isCommand(text: string): boolean {
+  return text.startsWith("/");
+}
+
+/** Parse a slash command into name + args */
+function parseCommand(text: string): { name: string; args: string } {
+  const trimmed = text.trim();
+  const spaceIdx = trimmed.indexOf(" ");
+  if (spaceIdx === -1) {
+    return { name: trimmed.slice(1).toLowerCase(), args: "" };
+  }
+  return {
+    name: trimmed.slice(1, spaceIdx).toLowerCase(),
+    args: trimmed.slice(spaceIdx + 1).trim(),
+  };
 }
 
 // ===========================================
@@ -884,12 +930,370 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
   }, [conversationId, saveMessageToDB, saveExecutionStateToDB]);
 
   // ===========================================
+  // NEW CHAT
+  // ===========================================
+
+  const newChat = useCallback(() => {
+    setMessages([]);
+    setConversationId(undefined);
+    conversationIdRef.current = undefined;
+    setStreamingContent("");
+    setToolActivity(null);
+    setError(null);
+    setCurrentPlan(null);
+    setWorkingBranch(null);
+    setBranchSelectionRequest(null);
+    setFilesChanged([]);
+    setPrUrl(null);
+    setPrNumber(null);
+    setExecutionProgress(null);
+    executionStateRef.current = { filesChanged: [] };
+  }, []);
+
+  // ===========================================
+  // SLASH COMMAND HANDLER
+  // ===========================================
+
+  // Ephemeral: only add to React state (help, branches, unknown, etc.)
+  const addSystemMessage = useCallback((content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `system-${Date.now()}`,
+        role: "assistant" as const,
+        content,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+  }, []);
+
+  // Persistent: add to React state AND save to DB
+  const addAndSaveMessage = useCallback(
+    (convId: string, role: "user" | "assistant", content: string, metadata?: Record<string, unknown>) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${role}-${Date.now()}`,
+          role,
+          content,
+          metadata,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      saveMessageToDB(convId, role, content, metadata).catch(console.error);
+    },
+    [saveMessageToDB]
+  );
+
+  // Commands that persist results to DB
+  const PERSISTENT_COMMANDS = new Set(["security", "review", "compact", "diff", "reset", "pr", "undo"]);
+
+  const handleCommand = useCallback(
+    async (input: string): Promise<boolean> => {
+      if (!isCommand(input)) return false;
+
+      const { name, args } = parseCommand(input);
+      const shouldPersist = PERSISTENT_COMMANDS.has(name);
+
+      // Auto-create conversation for persistent commands
+      let convId = conversationIdRef.current;
+      if (shouldPersist && !convId) {
+        convId = await ensureConversation(input);
+      }
+
+      // Show the command as a user message
+      if (shouldPersist && convId) {
+        addAndSaveMessage(convId, "user", input);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `user-${Date.now()}`,
+            role: "user",
+            content: input,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+
+      // Helper: add response (persistent or ephemeral based on command)
+      const respond = (content: string, metadata?: Record<string, unknown>) => {
+        if (shouldPersist && convId) {
+          addAndSaveMessage(convId, "assistant", content, metadata);
+        } else {
+          addSystemMessage(content);
+        }
+      };
+
+      switch (name) {
+        // ── /help ── (ephemeral)
+        case "help": {
+          addSystemMessage(HELP_TEXT);
+          return true;
+        }
+
+        // ── /clear ── (ephemeral — destroys conversation)
+        case "clear": {
+          newChat();
+          window.history.replaceState({}, "", `/repos/${repoId}/chat`);
+          return true;
+        }
+
+        // ── /reset ── (persistent)
+        case "reset": {
+          setCurrentPlan(null);
+          setFilesChanged([]);
+          setPrUrl(null);
+          setPrNumber(null);
+          setExecutionProgress(null);
+          setError(null);
+          executionStateRef.current = { filesChanged: [] };
+          if (convId) {
+            saveExecutionStateToDB(convId, { filesChanged: [] }).catch(console.error);
+          }
+          respond("Execution state cleared. Plan, files changed, and PR state have been reset.");
+          return true;
+        }
+
+        // ── /branch [name] ── (ephemeral)
+        case "branch": {
+          if (args) {
+            setWorkingBranch(args);
+            workingBranchRef.current = args;
+            if (convId) {
+              fetch(`/api/conversations/${convId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ working_branch: args }),
+              }).catch(console.error);
+            }
+            addSystemMessage(`Switched to branch \`${args}\`.`);
+          } else {
+            await fetchAndShowBranchSelector();
+          }
+          return true;
+        }
+
+        // ── /branches ── (ephemeral)
+        case "branches": {
+          setToolActivity("Loading branches...");
+          try {
+            const result = await executorRef.current.listBranches(repoId);
+            const current = workingBranch;
+            const list = result.branches
+              .map((b) => {
+                const marker = b.name === current ? " **(current)**" : "";
+                const protectedBadge = b.protected ? " (protected)" : "";
+                return `- \`${b.name}\`${marker}${protectedBadge}`;
+              })
+              .join("\n");
+            addSystemMessage(`**Branches:**\n\n${list}\n\nDefault: \`${result.defaultBranch}\``);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Failed to list branches";
+            addSystemMessage(`Error: ${msg}`);
+          }
+          setToolActivity(null);
+          return true;
+        }
+
+        // ── /security [path | pr N] ── (persistent)
+        case "security": {
+          setIsRunning(true);
+          setToolActivity("Running security scan...");
+          try {
+            let scanPath: string | undefined;
+            let scanPR: number | undefined;
+
+            const prMatch = args.match(/^pr\s+(\d+)$/i);
+            if (prMatch) {
+              scanPR = parseInt(prMatch[1], 10);
+            } else if (args) {
+              scanPath = args;
+            }
+
+            const context: AgentContext = {
+              repoId,
+              userId: "",
+              conversationId: convId || "",
+              githubToken: "",
+              repoFullName,
+              defaultBranch,
+              workingBranch: workingBranch || undefined,
+              messages: [],
+              llmConfig: { provider: llmProvider as LLMConfig["provider"], baseUrl: llmBaseUrl || "", model: llmModel || "" },
+              embeddingConfig: { provider: "openai", apiKey: "" },
+            };
+
+            const result = await securityScan(
+              context, executorRef.current, chatFnRef.current,
+              (e) => { if (e.type === "thinking") setToolActivity(e.message); },
+              scanPath, scanPR,
+            );
+            respond(result.error || result.report, { type: "security_scan", scope: scanPR ? `pr:${scanPR}` : scanPath || "full" });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Security scan failed";
+            respond(`Error: ${msg}`);
+          }
+          setIsRunning(false);
+          setToolActivity(null);
+          return true;
+        }
+
+        // ── /review pr [N] ── (persistent)
+        case "review": {
+          setIsRunning(true);
+          setToolActivity("Reviewing...");
+          try {
+            const prMatch = args.match(/^pr(?:\s+(\d+))?$/i);
+            if (!prMatch) {
+              respond("Usage: `/review pr` (list PRs) or `/review pr 42` (review specific PR)");
+              setIsRunning(false);
+              setToolActivity(null);
+              return true;
+            }
+
+            const context: AgentContext = {
+              repoId,
+              userId: "",
+              conversationId: convId || "",
+              githubToken: "",
+              repoFullName,
+              defaultBranch,
+              workingBranch: workingBranch || undefined,
+              messages: [],
+              llmConfig: { provider: llmProvider as LLMConfig["provider"], baseUrl: llmBaseUrl || "", model: llmModel || "" },
+              embeddingConfig: { provider: "openai", apiKey: "" },
+            };
+
+            const num = prMatch[1] ? parseInt(prMatch[1], 10) : undefined;
+            if (!num) {
+              const list = await listOpenPRs(context, executorRef.current);
+              respond(list, { type: "pr_list" });
+            } else {
+              const result = await reviewPR(
+                num, context, executorRef.current, chatFnRef.current,
+                (e) => { if (e.type === "thinking") setToolActivity(e.message); },
+              );
+              respond(result.error || result.review, { type: "pr_review", prNumber: num });
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Review failed";
+            respond(`Error: ${msg}`);
+          }
+          setIsRunning(false);
+          setToolActivity(null);
+          return true;
+        }
+
+        // ── /compact ── (persistent)
+        case "compact": {
+          if (!convId) {
+            addSystemMessage("No conversation to compact.");
+            return true;
+          }
+          setIsRunning(true);
+          setToolActivity("Compressing conversation...");
+          try {
+            const existing = await executorRef.current.getChatSummary(convId);
+            const result = await compressConversation(
+              convId,
+              executorRef.current,
+              chatFnRef.current,
+              existing,
+              0,
+            );
+            if (result) {
+              respond(`Conversation compressed. ${result.tokensCompressed.toLocaleString()} tokens summarized.`, { type: "compact", tokensCompressed: result.tokensCompressed });
+            } else {
+              respond("Nothing to compress — conversation is too short.");
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Compression failed";
+            respond(`Error: ${msg}`);
+          }
+          setIsRunning(false);
+          setToolActivity(null);
+          return true;
+        }
+
+        // ── /pr ── (persistent — delegates to orchestrator)
+        case "pr": {
+          if (!workingBranch) {
+            respond("No working branch set. Select a branch first with `/branch`.");
+            return true;
+          }
+          if (filesChanged.length === 0) {
+            respond("No files have been changed. Make some changes first.");
+            return true;
+          }
+          if (prUrl) {
+            respond(`PR already created: ${prUrl}`);
+            return true;
+          }
+          await runAgent("Create a pull request for the changes made");
+          return true;
+        }
+
+        // ── /diff ── (persistent)
+        case "diff": {
+          if (filesChanged.length === 0) {
+            respond("No files have been changed in this conversation.");
+            return true;
+          }
+          const fileList = filesChanged.map((f) => `- \`${f}\``).join("\n");
+          let diffMsg = `**Files changed (${filesChanged.length}):**\n\n${fileList}`;
+          if (workingBranch) {
+            diffMsg += `\n\nBranch: \`${workingBranch}\``;
+          }
+          if (prUrl) {
+            diffMsg += `\nPR: ${prUrl}`;
+          }
+          respond(diffMsg, { type: "diff", filesChanged });
+          return true;
+        }
+
+        // ── /undo ── (persistent — delegates to orchestrator)
+        case "undo": {
+          if (!workingBranch) {
+            respond("No working branch set. Nothing to undo.");
+            return true;
+          }
+          if (filesChanged.length === 0) {
+            respond("No file changes to undo.");
+            return true;
+          }
+          await runAgent(`Revert the last file change on branch ${workingBranch}. The last changed file was: ${filesChanged[filesChanged.length - 1]}`);
+          return true;
+        }
+
+        default: {
+          addSystemMessage(`Unknown command: \`/${name}\`. Type \`/help\` for available commands.`);
+          return true;
+        }
+      }
+    },
+    [
+      repoId, repoFullName, defaultBranch, workingBranch,
+      filesChanged, prUrl, llmProvider, llmBaseUrl, llmModel,
+      newChat, fetchAndShowBranchSelector, runAgent, ensureConversation,
+      addSystemMessage, addAndSaveMessage, saveExecutionStateToDB,
+    ]
+  );
+
+  // ===========================================
   // SEND MESSAGE (with approval/rejection guard)
   // ===========================================
 
   const sendMessage = useCallback(
     async (content: string) => {
       if (!content.trim() || isRunning) return;
+
+      // Guard 0: Slash commands (before everything else)
+      if (isCommand(content.trim())) {
+        await handleCommand(content.trim());
+        return;
+      }
 
       // Guard 2: Text approval/rejection (before LLM)
       // handleApprove/handleReject add their own user messages, so skip adding one here
@@ -916,7 +1320,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
       // Normal message → run orchestrator
       await runAgent(content);
     },
-    [isRunning, currentPlan, runAgent, handleApprove, handleReject]
+    [isRunning, currentPlan, runAgent, handleApprove, handleReject, handleCommand]
   );
 
   // ===========================================
@@ -995,26 +1399,6 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
     };
   }, []);
 
-  // ===========================================
-  // NEW CHAT
-  // ===========================================
-
-  const newChat = useCallback(() => {
-    setMessages([]);
-    setConversationId(undefined);
-    conversationIdRef.current = undefined;
-    setStreamingContent("");
-    setToolActivity(null);
-    setError(null);
-    setCurrentPlan(null);
-    setWorkingBranch(null);
-    setBranchSelectionRequest(null);
-    setFilesChanged([]);
-    setPrUrl(null);
-    setPrNumber(null);
-    setExecutionProgress(null);
-    executionStateRef.current = { filesChanged: [] };
-  }, []);
 
   // ===========================================
   // RETURN
