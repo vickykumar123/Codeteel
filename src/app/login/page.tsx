@@ -37,6 +37,29 @@ export default function LoginPage() {
     window.location.href = redirect;
   };
 
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError("Please enter your email first");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/callback?redirect=/reset-password`,
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+      return;
+    }
+
+    setMessage("Check your email for the password reset link!");
+    setLoading(false);
+  };
+
   const handleMagicLink = async () => {
     if (!email) {
       setError("Please enter your email");
@@ -117,6 +140,17 @@ export default function LoginPage() {
                 placeholder="••••••••"
               />
             </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              disabled={loading}
+              className="text-sm text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              Forgot password?
+            </button>
           </div>
 
           <div className="flex flex-col gap-3">
