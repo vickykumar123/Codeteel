@@ -423,12 +423,7 @@ export async function handlePlatformMessage(
       }
     }
 
-    // Clean up LLM artifacts
-    const cleanResponse = result.response
-      ?.replace(/\n*\s*CONFIRMED\.?\s*$/i, "")
-      .replace(/\n*\s*END\.?\s*$/i, "")
-      .replace(/\n+CONFIRMED\n*/gi, "\n")
-      .trim();
+    const cleanResponse = result.response?.trim();
 
     console.log(`[${msg.platform}] Response: "${cleanResponse?.slice(0, 300)}"`);
 

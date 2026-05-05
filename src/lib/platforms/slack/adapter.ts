@@ -268,14 +268,9 @@ export class SlackAdapter implements PlatformAdapter {
 
       case "message":
         if (event.content) {
-          // Clean up LLM artifacts (some models append "CONFIRMED", "END", etc.)
-          const cleanContent = (event.content as string)
-            .replace(/\n*\s*CONFIRMED\.?\s*$/i, "")
-            .replace(/\n*\s*END\.?\s*$/i, "")
-            .replace(/\n+CONFIRMED\n*/gi, "\n")
-            .trim();
-          if (cleanContent) {
-            await this.sendText(channelId, cleanContent, threadId);
+          const content = (event.content as string).trim();
+          if (content) {
+            await this.sendText(channelId, content, threadId);
           }
         }
         break;

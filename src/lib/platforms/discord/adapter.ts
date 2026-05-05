@@ -189,13 +189,9 @@ export class DiscordAdapter implements PlatformAdapter {
 
       case "message":
         if (event.content) {
-          const cleanContent = (event.content as string)
-            .replace(/\n*\s*CONFIRMED\.?\s*$/i, "")
-            .replace(/\n*\s*END\.?\s*$/i, "")
-            .replace(/\n+CONFIRMED\n*/gi, "\n")
-            .trim();
-          if (cleanContent) {
-            await this.sendText(channelId, cleanContent);
+          const content = (event.content as string).trim();
+          if (content) {
+            await this.sendText(channelId, content);
           }
         }
         break;

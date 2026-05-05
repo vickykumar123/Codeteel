@@ -779,11 +779,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
 
         // Add assistant response to messages
         if (result.response) {
-          // Normalize branch selection messages (LLM sometimes writes verbose text)
-          let responseContent = result.response
-            .replace(/\n*\s*CONFIRMED\.?\s*$/i, "")
-            .replace(/\n*\s*END\.?\s*$/i, "")
-            .trim();
+          let responseContent = result.response.trim();
           if (/confirm.*branch|select.*branch|branch.*you.*like|choose.*branch/i.test(responseContent)) {
             responseContent = "Please select a branch to continue.";
           }

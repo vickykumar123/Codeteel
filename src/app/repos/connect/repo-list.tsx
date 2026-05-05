@@ -24,7 +24,12 @@ interface RepoListProps {
 export function RepoList({ repos, connectedIds, userId }: RepoListProps) {
   const [connecting, setConnecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const router = useRouter();
+
+  const filtered = search
+    ? repos.filter(r => r.full_name.toLowerCase().includes(search.toLowerCase()))
+    : repos;
 
   const handleConnect = async (repo: Repo) => {
     setConnecting(String(repo.id));
@@ -33,9 +38,7 @@ export function RepoList({ repos, connectedIds, userId }: RepoListProps) {
     try {
       const response = await fetch("/api/repos", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           github_id: String(repo.id),
           name: repo.name,
@@ -89,63 +92,77 @@ export function RepoList({ repos, connectedIds, userId }: RepoListProps) {
 
   return (
     <div>
+      {/* Search */}
+      <div className="px-6 py-3 border-b border-[#292524]">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search repositories..."
+          className="w-full px-4 py-2.5 bg-[#0C0A09] border border-[#292524] rounded-xl text-[#FAFAF9] placeholder-[#44403C] text-sm focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 transition-all"
+        />
+      </div>
+
       {error && (
-        <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">
+        <div className="mx-6 mt-4 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-sm">
           {error}
         </div>
       )}
 
-      <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-        {repos.map((repo) => {
+      {/* Repo list */}
+      <div className="divide-y divide-[#292524]">
+        {filtered.map((repo) => {
           const isConnected = connectedIds.includes(String(repo.id));
           const isLoading = connecting === String(repo.id);
 
           return (
-            <li
+            <div
               key={repo.id}
-              className="p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex justify-between items-center"
+              className="px-6 py-4 flex items-center justify-between gap-4 hover:bg-[#292524]/30 transition-colors"
             >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-gray-900 dark:text-white truncate">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-[#FAFAF9] truncate">
                     {repo.full_name}
                   </span>
                   {repo.private && (
-                    <span className="px-2 py-0.5 text-xs bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded">
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-[#292524] text-[#A8A29E] border border-[#3F3F46] rounded-md">
                       Private
                     </span>
                   )}
                   {isConnected && (
-                    <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded">
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-400 border border-green-500/20 rounded-md">
                       Connected
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-3 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {repo.language && <span>{repo.language}</span>}
-                  <span>⭐ {repo.stargazers_count}</span>
+                <div className="flex items-center gap-3 mt-1 text-xs text-[#44403C]">
+                  {repo.language && (
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-[#E8A87C]" />
+                      {repo.language}
+                    </span>
+                  )}
+                  <span>{repo.stargazers_count} stars</span>
                   <span>
                     Updated{" "}
                     {new Date(repo.updated_at).toLocaleDateString("en-US", {
-                      year: "numeric",
                       month: "short",
                       day: "numeric",
                     })}
                   </span>
                 </div>
                 {repo.description && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 truncate">
-                    {repo.description}
-                  </p>
+                  <p className="text-xs text-[#44403C] mt-1 truncate">{repo.description}</p>
                 )}
               </div>
 
-              <div className="ml-4">
+              <div className="flex-shrink-0">
                 {isConnected ? (
                   <button
                     onClick={() => handleDisconnect(String(repo.id), repo.full_name || repo.name)}
                     disabled={isLoading}
-                    className="px-3 py-1.5 text-sm border border-red-300 dark:border-red-600 text-red-600 dark:text-red-400 rounded hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                    className="px-3.5 py-1.5 text-xs font-medium border border-red-500/30 text-red-400 rounded-lg hover:bg-red-500/10 disabled:opacity-50 transition-all"
                   >
                     {isLoading ? "..." : "Disconnect"}
                   </button>
@@ -153,20 +170,20 @@ export function RepoList({ repos, connectedIds, userId }: RepoListProps) {
                   <button
                     onClick={() => handleConnect(repo)}
                     disabled={isLoading}
-                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    className="px-3.5 py-1.5 text-xs font-semibold bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
                   >
                     {isLoading ? "Connecting..." : "Connect"}
                   </button>
                 )}
               </div>
-            </li>
+            </div>
           );
         })}
-      </ul>
+      </div>
 
-      {repos.length === 0 && (
-        <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-          No repositories found
+      {filtered.length === 0 && (
+        <div className="px-6 py-12 text-center text-sm text-[#44403C]">
+          {search ? "No repositories match your search" : "No repositories found"}
         </div>
       )}
     </div>

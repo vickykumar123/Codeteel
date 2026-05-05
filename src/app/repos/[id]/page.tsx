@@ -8,6 +8,7 @@ import { ChangeBanner } from "./change-banner";
 import { BranchSelector } from "./branch-selector";
 import { RepoInstructions } from "./repo-instructions";
 import { PlatformConnect } from "./platform-connect";
+import { AppNavbar } from "../../components/app-navbar";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -81,38 +82,26 @@ export default async function RepoDetailPage({ params }: PageProps) {
     .limit(20);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+    <div className="min-h-screen bg-[#0C0A09]">
+      <AppNavbar activePage="repo" />
+
+      {/* Repo sub-header */}
+      <div className="border-b border-[#1C1917]">
+        <div className="max-w-7xl mx-auto px-5 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <Link
-              href="/dashboard"
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700"
-            >
+            <Link href="/dashboard" className="text-xs text-[#44403C] hover:text-[#A8A29E] transition-colors">
               ← Dashboard
             </Link>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white mt-1">
-              {repo.full_name}
-            </h1>
+            <h1 className="text-lg font-semibold text-[#FAFAF9] mt-0.5">{repo.full_name}</h1>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {repo.index_status === "ready" && (
               <Link
                 href={`/repos/${id}/chat`}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity"
               >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                  />
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                 </svg>
                 Chat with Code
               </Link>
@@ -121,13 +110,13 @@ export default async function RepoDetailPage({ params }: PageProps) {
               href={`https://github.com/${repo.full_name}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm text-blue-600 hover:text-blue-500"
+              className="text-xs text-[#A8A29E] hover:text-[#FAFAF9] transition-colors"
             >
-              View on GitHub →
+              GitHub →
             </a>
           </div>
         </div>
-      </header>
+      </div>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* Status Card */}
