@@ -139,9 +139,13 @@ export function IndexButton({
         {indexer.status === "indexing" && (
           <button
             onClick={indexer.cancel}
-            className="px-4 py-2 rounded-md text-sm font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+            disabled={indexer.cancelling}
+            className="px-4 py-2 rounded-md text-sm font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors disabled:opacity-70 flex items-center gap-2"
           >
-            Cancel
+            {indexer.cancelling && (
+              <span className="animate-spin w-3.5 h-3.5 border-2 border-red-500 border-t-transparent rounded-full" />
+            )}
+            {indexer.cancelling ? "Cancelling..." : "Cancel"}
           </button>
         )}
 
