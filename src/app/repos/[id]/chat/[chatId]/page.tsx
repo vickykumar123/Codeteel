@@ -105,7 +105,7 @@ export default async function ChatWithIdPage({ params }: PageProps) {
     .eq("repo_id", id)
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
-    .limit(10);
+    .limit(25);
 
   // Transform conversations to expected types
   const conversations = (recentConversations || []).map((c) => ({

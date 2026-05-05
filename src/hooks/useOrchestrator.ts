@@ -840,6 +840,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
   // Shared helper: fetch branches from API and show modal
   const fetchAndShowBranchSelector = useCallback(
     async (suggestedName = "feature/codeteel-changes") => {
+      setIsLoadingBranches(true);
       try {
         const result = await executorRef.current.listBranches(repoId);
         setBranchSelectionRequest({
@@ -851,6 +852,8 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to load branches";
         setError(msg);
+      } finally {
+        setIsLoadingBranches(false);
       }
     },
     [repoId]

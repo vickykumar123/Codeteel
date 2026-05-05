@@ -42,7 +42,7 @@ const markdownComponents: Components = {
     const isInline = !match && !className;
     if (isInline) {
       return (
-        <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono text-pink-600 dark:text-pink-400" {...props}>
+        <code className="bg-[#292524] px-1.5 py-0.5 rounded text-sm font-mono text-[#E8A87C]" {...props}>
           {children}
         </code>
       );
@@ -50,29 +50,29 @@ const markdownComponents: Components = {
     return <code className={`${className} block`} {...props}>{children}</code>;
   },
   pre({ children }) {
-    return <pre className="bg-gray-900 dark:bg-gray-950 rounded-lg p-4 overflow-x-auto my-3 text-sm">{children}</pre>;
+    return <pre className="bg-[#0C0A09] border border-[#292524] rounded-xl p-4 overflow-x-auto my-3 text-sm">{children}</pre>;
   },
   a({ href, children }) {
-    return <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">{children}</a>;
+    return <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#E8A87C] hover:text-[#F5D5C3] hover:underline">{children}</a>;
   },
   ul({ children }) { return <ul className="list-disc list-inside my-2 space-y-1">{children}</ul>; },
   ol({ children }) { return <ol className="list-decimal list-inside my-2 space-y-1">{children}</ol>; },
-  li({ children }) { return <li className="text-gray-700 dark:text-gray-300">{children}</li>; },
-  h1({ children }) { return <h1 className="text-xl font-bold mt-4 mb-2 text-gray-900 dark:text-white">{children}</h1>; },
-  h2({ children }) { return <h2 className="text-lg font-bold mt-3 mb-2 text-gray-900 dark:text-white">{children}</h2>; },
-  h3({ children }) { return <h3 className="text-base font-bold mt-3 mb-1 text-gray-900 dark:text-white">{children}</h3>; },
-  p({ children }) { return <p className="my-2 text-gray-700 dark:text-gray-300 leading-relaxed">{children}</p>; },
+  li({ children }) { return <li className="text-[#A8A29E]">{children}</li>; },
+  h1({ children }) { return <h1 className="text-xl font-bold mt-4 mb-2 text-[#FAFAF9]">{children}</h1>; },
+  h2({ children }) { return <h2 className="text-lg font-bold mt-3 mb-2 text-[#FAFAF9]">{children}</h2>; },
+  h3({ children }) { return <h3 className="text-base font-bold mt-3 mb-1 text-[#FAFAF9]">{children}</h3>; },
+  p({ children }) { return <p className="my-2 text-[#A8A29E] leading-relaxed">{children}</p>; },
   blockquote({ children }) {
-    return <blockquote className="border-l-4 border-gray-300 dark:border-gray-600 pl-4 my-2 italic text-gray-600 dark:text-gray-400">{children}</blockquote>;
+    return <blockquote className="border-l-4 border-[#292524] pl-4 my-2 italic text-[#A8A29E]">{children}</blockquote>;
   },
   table({ children }) {
-    return <div className="overflow-x-auto my-3"><table className="min-w-full border border-gray-200 dark:border-gray-700 rounded-lg">{children}</table></div>;
+    return <div className="overflow-x-auto my-3"><table className="min-w-full border border-[#292524] rounded-lg">{children}</table></div>;
   },
-  thead({ children }) { return <thead className="bg-gray-100 dark:bg-gray-800">{children}</thead>; },
-  th({ children }) { return <th className="px-4 py-2 text-left text-sm font-semibold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">{children}</th>; },
-  td({ children }) { return <td className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700">{children}</td>; },
-  hr() { return <hr className="my-4 border-gray-200 dark:border-gray-700" />; },
-  strong({ children }) { return <strong className="font-semibold text-gray-900 dark:text-white">{children}</strong>; },
+  thead({ children }) { return <thead className="bg-[#292524]">{children}</thead>; },
+  th({ children }) { return <th className="px-4 py-2 text-left text-sm font-semibold text-[#FAFAF9] border-b border-[#292524]">{children}</th>; },
+  td({ children }) { return <td className="px-4 py-2 text-sm text-[#A8A29E] border-b border-[#292524]">{children}</td>; },
+  hr() { return <hr className="my-4 border-[#292524]" />; },
+  strong({ children }) { return <strong className="font-semibold text-[#FAFAF9]">{children}</strong>; },
   em({ children }) { return <em className="italic">{children}</em>; },
 };
 
@@ -102,21 +102,21 @@ export function MessageList({
     return (
       <div className="h-full flex items-center justify-center p-8">
         <div className="text-center max-w-md">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-            <svg className="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[#E8A87C]/10 flex items-center justify-center">
+            <svg className="w-8 h-8 text-[#E8A87C]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Start a conversation</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <h3 className="text-lg font-semibold text-[#FAFAF9] mb-2">Start a conversation</h3>
+          <p className="text-sm text-[#71717A]">
             Ask questions about your codebase or request code changes.
             I&apos;ll search through your indexed files to help you.
           </p>
           <div className="mt-6 space-y-2 text-left">
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Try asking:</p>
+            <p className="text-xs font-medium text-[#71717A] uppercase">Try asking:</p>
             <div className="space-y-1">
               {["Where is the authentication logic?", "How does the API handle errors?", "Add a logout button to the navbar"].map((example, i) => (
-                <p key={i} className="text-sm text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded px-3 py-2">
+                <p key={i} className="text-sm text-[#A8A29E] bg-[#292524] rounded px-3 py-2">
                   &quot;{example}&quot;
                 </p>
               ))}
@@ -147,9 +147,9 @@ export function MessageList({
           <div className="flex gap-4">
             <AiAvatar />
             <div className="flex-1">
-              <div className="inline-flex items-center gap-2.5 bg-white dark:bg-gray-800 rounded-lg px-4 py-3 shadow-sm border border-gray-100 dark:border-gray-700">
+              <div className="inline-flex items-center gap-2.5 bg-[#1C1917] rounded-xl px-4 py-3 border border-[#292524]">
                 <ToolActivityIcon activity={toolActivity} />
-                <span className="text-sm text-gray-600 dark:text-gray-300">{toolActivity}</span>
+                <span className="text-sm text-[#A8A29E]">{toolActivity}</span>
               </div>
             </div>
           </div>
@@ -159,9 +159,9 @@ export function MessageList({
         {streamingContent && (
           <div className="flex gap-4">
             <AiAvatar />
-            <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm">
+            <div className="flex-1 bg-[#1C1917] rounded-lg p-4 shadow-sm">
               <MarkdownContent content={streamingContent} />
-              <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-1" />
+              <span className="inline-block w-0.5 h-4 bg-[#E8A87C] animate-pulse rounded-full ml-1" />
             </div>
           </div>
         )}
@@ -171,9 +171,9 @@ export function MessageList({
           <div className="flex gap-4">
             <AiAvatar />
             <div className="flex-1">
-              <div className="inline-flex items-center gap-2.5 bg-white dark:bg-gray-800 rounded-lg px-4 py-3 shadow-sm border border-gray-100 dark:border-gray-700">
-                <span className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full" />
-                <span className="text-sm text-gray-600 dark:text-gray-300">Loading branches...</span>
+              <div className="inline-flex items-center gap-2.5 bg-[#1C1917] rounded-xl px-4 py-3 border border-[#292524]">
+                <span className="animate-spin w-4 h-4 border-2 border-[#E8A87C] border-t-transparent rounded-full" />
+                <span className="text-sm text-[#A8A29E]">Loading branches...</span>
               </div>
             </div>
           </div>
@@ -184,9 +184,9 @@ export function MessageList({
           <div className="flex gap-4">
             <AiAvatar />
             <div className="flex-1">
-              <div className="inline-flex items-center gap-2.5 bg-white dark:bg-gray-800 rounded-lg px-4 py-3 shadow-sm border border-gray-100 dark:border-gray-700">
+              <div className="inline-flex items-center gap-2.5 bg-[#1C1917] rounded-xl px-4 py-3 border border-[#292524]">
                 <ThinkingDots />
-                <span className="text-sm text-gray-500 dark:text-gray-400">Thinking...</span>
+                <span className="text-sm text-[#71717A]">Thinking...</span>
               </div>
             </div>
           </div>
@@ -204,7 +204,7 @@ export function MessageList({
 
 function AiAvatar() {
   return (
-    <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#E8A87C] to-[#C9A96E] flex items-center justify-center flex-shrink-0">
       <span className="text-white text-sm font-medium">AI</span>
     </div>
   );
@@ -235,12 +235,12 @@ function MessageBubble({
   if (isUser) {
     return (
       <div className="flex gap-4 flex-row-reverse">
-        <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-xl bg-[#292524] border border-[#3F3F46] flex items-center justify-center flex-shrink-0">
           <span className="text-white text-sm font-medium">U</span>
         </div>
-        <div className="flex-1 max-w-[80%] rounded-lg p-4 bg-gray-600 text-white ml-auto">
+        <div className="flex-1 max-w-[80%] rounded-2xl p-4 bg-[#292524] border border-[#3F3F46] text-[#FAFAF9] ml-auto">
           <p className="whitespace-pre-wrap">{message.content}</p>
-          <div className="text-xs mt-2 text-gray-300">{formatTime(message.created_at)}</div>
+          <div className="text-xs mt-2 text-[#71717A]">{formatTime(message.created_at)}</div>
         </div>
       </div>
     );
@@ -250,7 +250,7 @@ function MessageBubble({
   return (
     <div className="flex gap-4">
       <AiAvatar />
-      <div className="flex-1 max-w-[80%] rounded-lg p-4 bg-white dark:bg-gray-800 shadow-sm">
+      <div className="flex-1 max-w-[80%] rounded-2xl p-4 bg-[#1C1917] border border-[#292524]">
         {/* Plan message */}
         {metadataType === "plan" && message.metadata?.plan ? (
           <InlinePlan
@@ -278,7 +278,7 @@ function MessageBubble({
                 href={message.metadata.prUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-md text-sm hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                className="inline-flex items-center gap-2 mt-3 px-3 py-1.5 bg-green-500/10 text-green-400 border border-green-500/20 rounded-xl text-sm hover:bg-green-500/20 transition-all"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -288,7 +288,7 @@ function MessageBubble({
             )}
           </>
         )}
-        <div className="text-xs mt-2 text-gray-400 dark:text-gray-500">{formatTime(message.created_at)}</div>
+        <div className="text-xs mt-2 text-[#71717A]">{formatTime(message.created_at)}</div>
       </div>
     </div>
   );
@@ -317,22 +317,22 @@ function InlinePlan({
 
   return (
     <div>
-      <p className="text-gray-700 dark:text-gray-300 mb-3">
+      <p className="text-[#A8A29E] mb-3">
         I&apos;ve analyzed the codebase and created a plan:
       </p>
 
       {/* Plan card */}
-      <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+      <div className="border border-[#292524] rounded-lg overflow-hidden">
         {/* Plan header */}
-        <div className="bg-gray-50 dark:bg-gray-750 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+        <div className="bg-gray-50 dark:bg-gray-750 px-4 py-3 border-b border-[#292524]">
           <div className="flex items-center gap-2">
             <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
-            <span className="font-medium text-gray-900 dark:text-white text-sm">{plan.title}</span>
+            <span className="font-medium text-[#FAFAF9] text-sm">{plan.title}</span>
           </div>
           {plan.summary && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{plan.summary}</p>
+            <p className="text-xs text-[#71717A] mt-1">{plan.summary}</p>
           )}
         </div>
 
@@ -349,10 +349,10 @@ function InlinePlan({
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium uppercase text-gray-400 dark:text-gray-500">{step.type}</span>
-                  <code className="text-xs text-gray-600 dark:text-gray-300 font-mono truncate">{step.path}</code>
+                  <span className="text-xs font-medium uppercase text-[#71717A]">{step.type}</span>
+                  <code className="text-xs text-[#A8A29E] font-mono truncate">{step.path}</code>
                 </div>
-                <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">{step.description}</p>
+                <p className="text-sm text-[#A8A29E] mt-0.5">{step.description}</p>
               </div>
             </div>
           ))}
@@ -364,7 +364,7 @@ function InlinePlan({
         <div className="flex items-center gap-3 mt-4">
           <button
             onClick={onApprove}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] text-sm font-semibold rounded-xl hover:opacity-90 transition-opacity"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -373,7 +373,7 @@ function InlinePlan({
           </button>
           <button
             onClick={onReject}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-medium rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#292524] text-[#A8A29E] text-sm font-medium rounded-lg hover:bg-[#3F3F46] transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -400,7 +400,7 @@ function InlinePlan({
 
       {/* Rejected state */}
       {approved === false && (
-        <div className="flex items-center gap-2 mt-3 text-sm text-gray-500 dark:text-gray-400">
+        <div className="flex items-center gap-2 mt-3 text-sm text-[#71717A]">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -444,7 +444,7 @@ function InlineExecution({
   return (
     <div>
       {content && (
-        <p className="text-gray-700 dark:text-gray-300 mb-3">{content}</p>
+        <p className="text-[#A8A29E] mb-3">{content}</p>
       )}
 
       {/* Steps */}
@@ -479,7 +479,7 @@ function ExecutionStep({ step }: { step: StepResult }) {
   const hasDiff = step.diff && (step.diff.oldString || step.diff.newString);
 
   return (
-    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+    <div className="border border-[#292524] rounded-lg overflow-hidden">
       {/* Step header */}
       <button
         type="button"
@@ -492,11 +492,11 @@ function ExecutionStep({ step }: { step: StepResult }) {
         {/* Step info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <code className="text-xs font-mono text-gray-600 dark:text-gray-300 truncate">
+            <code className="text-xs font-mono text-[#A8A29E] truncate">
               {step.path || "..."}
             </code>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+          <p className="text-xs text-[#71717A] truncate mt-0.5">
             {step.description}
           </p>
         </div>
@@ -521,7 +521,7 @@ function ExecutionStep({ step }: { step: StepResult }) {
 
       {/* Expanded diff */}
       {expanded && hasDiff && (
-        <div className="border-t border-gray-200 dark:border-gray-700">
+        <div className="border-t border-[#292524]">
           <DiffView
             oldString={step.diff!.oldString}
             newString={step.diff!.newString}
@@ -652,9 +652,9 @@ function ToolActivityIcon({ activity }: { activity: string }) {
 function ThinkingDots() {
   return (
     <div className="flex items-center gap-1">
-      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-      <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+      <div className="w-1.5 h-1.5 bg-[#E8A87C] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+      <div className="w-1.5 h-1.5 bg-[#E8A87C] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+      <div className="w-1.5 h-1.5 bg-[#E8A87C] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
     </div>
   );
 }

@@ -42,7 +42,9 @@ export function ChatInput({ onSend, disabled, placeholder, onStop }: ChatInputPr
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = "auto";
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+      const newHeight = Math.min(textarea.scrollHeight, 200);
+      textarea.style.height = `${newHeight}px`;
+      textarea.style.overflowY = textarea.scrollHeight > 200 ? "auto" : "hidden";
     }
   }, [message]);
 
@@ -119,7 +121,7 @@ export function ChatInput({ onSend, disabled, placeholder, onStop }: ChatInputPr
   return (
     <form
       onSubmit={handleSubmit}
-      className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
+      className="border-t border-[#1C1917] bg-[#0C0A09] p-4"
     >
       <div className="max-w-3xl mx-auto">
         <div className="relative flex items-end gap-3">
@@ -127,7 +129,7 @@ export function ChatInput({ onSend, disabled, placeholder, onStop }: ChatInputPr
           {showCommands && (
             <div
               ref={commandsRef}
-              className="absolute bottom-full left-0 mb-2 w-80 max-h-64 overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 shadow-lg z-10"
+              className="absolute bottom-full left-0 right-12 mb-2 max-h-64 overflow-y-auto rounded-xl border border-[#292524] bg-[#1C1917] shadow-xl shadow-black/30 z-10"
             >
               {filteredCommands.map((cmd, i) => (
                 <button
@@ -137,17 +139,17 @@ export function ChatInput({ onSend, disabled, placeholder, onStop }: ChatInputPr
                   onClick={() => selectCommand(cmd)}
                   className={`w-full text-left px-3 py-2 flex items-center gap-3 text-sm transition-colors ${
                     i === selectedIndex
-                      ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                      : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600"
+                      ? "bg-[#E8A87C]/10 text-[#E8A87C]"
+                      : "text-[#A8A29E] hover:bg-[#292524] hover:text-[#FAFAF9]"
                   }`}
                 >
                   <span className="font-mono font-medium shrink-0">
                     {cmd.name}
                     {cmd.args && (
-                      <span className="text-gray-400 dark:text-gray-500 font-normal"> {cmd.args}</span>
+                      <span className="text-[#71717A] font-normal"> {cmd.args}</span>
                     )}
                   </span>
-                  <span className="text-gray-400 dark:text-gray-500 truncate text-xs">
+                  <span className="text-[#71717A] truncate text-xs">
                     {cmd.description}
                   </span>
                 </button>
@@ -168,7 +170,7 @@ export function ChatInput({ onSend, disabled, placeholder, onStop }: ChatInputPr
             disabled={disabled}
             maxLength={MAX_CHARS}
             rows={1}
-            className="flex-1 resize-none rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 resize-none rounded-xl border border-[#292524] bg-[#1C1917] px-4 py-3 text-[#FAFAF9] placeholder-[#71717A] focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           />
 
           {disabled ? (
@@ -177,7 +179,7 @@ export function ChatInput({ onSend, disabled, placeholder, onStop }: ChatInputPr
               type="button"
               onClick={onStop}
               title="Stop generating"
-              className="flex-shrink-0 w-12 h-12 rounded-lg bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors"
+              className="flex-shrink-0 w-12 h-12 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/30 transition-colors"
             >
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                 <rect x="6" y="6" width="12" height="12" rx="2" />
@@ -188,7 +190,7 @@ export function ChatInput({ onSend, disabled, placeholder, onStop }: ChatInputPr
             <button
               type="submit"
               disabled={!message.trim()}
-              className="flex-shrink-0 w-12 h-12 rounded-lg bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] flex items-center justify-center hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
               <svg
                 className="w-5 h-5"
@@ -200,14 +202,14 @@ export function ChatInput({ onSend, disabled, placeholder, onStop }: ChatInputPr
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
+                  d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
                 />
               </svg>
             </button>
           )}
         </div>
 
-        <div className="flex justify-between mt-2 text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex justify-between mt-2 text-xs text-[#71717A]">
           <span>
             {disabled
               ? "Agent is working..."

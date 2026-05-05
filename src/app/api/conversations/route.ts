@@ -49,18 +49,26 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const repoId = url.searchParams.get("repoId");
+  const before = url.searchParams.get("before");
+  const limit = Math.min(parseInt(url.searchParams.get("limit") || "50", 10), 100);
 
   if (!repoId) {
     return NextResponse.json({ error: "repoId required" }, { status: 400 });
   }
 
-  const { data, error } = await auth.adminClient
+  let query = auth.adminClient
     .from("conversations")
-    .select("id, title, created_at, updated_at")
+    .select("id, title, created_at, updated_at, platform")
     .eq("user_id", auth.userId)
     .eq("repo_id", repoId)
     .order("updated_at", { ascending: false })
-    .limit(50);
+    .limit(limit);
+
+  if (before) {
+    query = query.lt("updated_at", before);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
