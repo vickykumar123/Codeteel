@@ -174,13 +174,14 @@ function parseCommand(text: string): { name: string; args: string } {
 
 function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: string): ChatFn {
   if (llmProvider === "ollama") {
-    // Direct browser → Ollama (OpenAI-compatible API, no proxy needed)
+    // Direct browser → Ollama (OpenAI-compatible streaming API)
     const baseUrl = llmBaseUrl || "http://localhost:11434/v1";
     const model = llmModel || "llama3";
 
     return async (
       messages: LLMChatMessage[],
-      tools?: LLMToolDef[]
+      tools?: LLMToolDef[],
+      onStream?: (delta: string) => void,
     ): Promise<LLMChatResponse> => {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
@@ -190,7 +191,7 @@ function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: strin
           messages,
           tools: tools && tools.length > 0 ? tools : undefined,
           tool_choice: tools && tools.length > 0 ? "auto" : undefined,
-          temperature: undefined,
+          stream: true,
         }),
       });
 
@@ -199,23 +200,66 @@ function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: strin
         throw new Error(data.error?.message || data.error || `Ollama request failed (${response.status})`);
       }
 
-      const data = await response.json();
-      const choice = data.choices?.[0];
-      const message = choice?.message;
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
 
-      // Parse OpenAI-compatible response into LLMChatResponse
-      const toolCalls = message?.tool_calls
-        ?.filter((tc: { type: string }) => tc.type === "function")
-        .map((tc: { id: string; type: string; function: { name: string; arguments: string } }) => ({
-          id: tc.id,
-          type: "function" as const,
-          function: { name: tc.function.name, arguments: tc.function.arguments },
-        }));
+      const decoder = new TextDecoder();
+      let content = "";
+      const toolCallMap = new Map<number, { id: string; name: string; arguments: string }>();
+      let buffer = "";
 
-      return {
-        content: message?.content || "",
-        tool_calls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
-      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const json = line.slice(6).trim();
+          if (!json || json === "[DONE]") continue;
+
+          try {
+            const chunk = JSON.parse(json);
+            const delta = chunk.choices?.[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.content) {
+              content += delta.content;
+              if (onStream && toolCallMap.size === 0) {
+                onStream(delta.content);
+              }
+            }
+
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                const existing = toolCallMap.get(idx) || { id: "", name: "", arguments: "" };
+                if (tc.id) existing.id = tc.id;
+                if (tc.function?.name) existing.name += tc.function.name;
+                if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+                toolCallMap.set(idx, existing);
+              }
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+
+      const toolCalls = toolCallMap.size > 0
+        ? Array.from(toolCallMap.entries())
+            .sort(([a], [b]) => a - b)
+            .map(([, tc]) => ({
+              id: tc.id,
+              type: "function" as const,
+              function: { name: tc.name, arguments: tc.arguments },
+            }))
+        : undefined;
+
+      return { content, tool_calls: toolCalls };
     };
   }
 
@@ -223,7 +267,8 @@ function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: strin
   // Reads SSE stream to keep Vercel connection alive past 15s timeout
   return async (
     messages: LLMChatMessage[],
-    tools?: LLMToolDef[]
+    tools?: LLMToolDef[],
+    onStream?: (delta: string) => void,
   ): Promise<LLMChatResponse> => {
     const response = await fetch("/api/llm/chat", {
       method: "POST",
@@ -264,6 +309,9 @@ function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: strin
 
           if (event.type === "content") {
             content += event.text;
+            if (onStream && toolCallMap.size === 0) {
+              onStream(event.text);
+            }
           } else if (event.type === "tool_call") {
             const idx = event.index as number;
             const existing = toolCallMap.get(idx);
@@ -481,6 +529,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
 
         case "tool_call":
           setToolActivity(`Using ${event.tool}...`);
+          setStreamingContent(""); // Clear any partial streaming from previous LLM call
           break;
 
         case "tool_result":
@@ -803,6 +852,8 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
         // Update plan state
         if (result.plan) {
           setCurrentPlan(result.plan);
+        } else {
+          setCurrentPlan(null);
         }
 
         // Save execution state to DB in background

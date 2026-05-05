@@ -169,6 +169,9 @@ export function chatStream(
 
   return new ReadableStream({
     async start(controller) {
+      // Send heartbeat immediately to open the stream (browser receives response instantly)
+      controller.enqueue(encoder.encode(`: connected\n\n`));
+
       try {
         const stream = await client.chat.completions.create({
           model,

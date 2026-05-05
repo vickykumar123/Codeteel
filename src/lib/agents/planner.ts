@@ -122,13 +122,19 @@ Do NOT keep searching hoping to find something. Search efficiently, then create_
 ## Plan Rules
 - Each step = ONE atomic change to ONE file
 - Every step needs: type ("create" | "modify" | "delete"), path, and description
-- Descriptions are text only — no code. The executor generates code from your descriptions.
-- Be specific: name functions, classes, insertion points, what to add/remove
+- Descriptions are SHORT (1-2 sentences max). No code, no implementation details.
+- The executor generates code — you just say WHAT, not HOW
 - Order steps logically (dependencies first)
 - Split multi-edit requests into separate steps, even for the same file
 
-**Good**: "Add a /health GET route handler returning {status: 'ok'}" (path: src/app.ts)
-**Bad**: "Update the file" / "Add the feature" / "Fix the bug"
+**Good descriptions** (short, clear):
+- "Add a /health GET route returning {status: ok}"
+- "Add request logging with correlation ID to the webhook handler"
+- "Create a utility module for date formatting helpers"
+
+**Bad descriptions** (too long, too detailed):
+- "Add imports: uuid, datetime, time, traceback. Then add 4 helper functions: _generate_request_id() which returns str using uuid4, _sanitize_headers() which..."
+- "Modify the file to add a new function called handleAuth that takes a request parameter of type Request and returns..."
 
 ## Efficiency
 - If the user provides exact file paths (e.g. "modify src/main.py"), call read_file DIRECTLY — do NOT search first

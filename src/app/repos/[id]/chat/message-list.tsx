@@ -148,8 +148,9 @@ export function MessageList({
             <AiAvatar />
             <div className="flex-1">
               <div className="inline-flex items-center gap-2.5 bg-[#1C1917] rounded-xl px-4 py-3 border border-[#292524]">
-                <ToolActivityIcon activity={toolActivity} />
+                <span className="w-2 h-2 bg-[#E8A87C] rounded-full animate-pulse flex-shrink-0" />
                 <span className="text-sm text-[#A8A29E]">{toolActivity}</span>
+                <ElapsedTime />
               </div>
             </div>
           </div>
@@ -657,4 +658,16 @@ function ThinkingDots() {
       <div className="w-1.5 h-1.5 bg-[#E8A87C] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
     </div>
   );
+}
+
+function ElapsedTime() {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setSeconds(s => s + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (seconds < 3) return null; // Don't show for quick responses
+  return <span className="text-[10px] text-[#71717A] ml-1">{seconds}s</span>;
 }

@@ -229,6 +229,7 @@ export interface LLMChatResponse {
 export type ChatFn = (
   messages: LLMChatMessage[],
   tools?: LLMToolDef[],
+  onStream?: (delta: string) => void,
 ) => Promise<LLMChatResponse>;
 
 // ===========================================
@@ -285,4 +286,6 @@ export interface PersistedExecutionState {
   prNumber?: number;
   /** Search journal — recent searches to avoid redundant lookups (max 7) */
   searchJournal?: SearchJournalEntry[];
+  /** Last execution failure details (file + error) for LLM context */
+  lastExecutionError?: { path: string; error: string }[];
 }

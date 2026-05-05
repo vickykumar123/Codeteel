@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { BranchInfo, BranchSelectionResponse } from "@/lib/agents/types";
 
 interface BranchModalProps {
@@ -9,7 +9,7 @@ interface BranchModalProps {
   suggestedName: string;
   defaultBase: string;
   protectedBranches: string[];
-  onSelect: (selection: BranchSelectionResponse) => void;
+  onSelect: (selection: BranchSelectionResponse) => void | Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
 }
@@ -29,24 +29,37 @@ export function BranchModal({
   const [newBranchName, setNewBranchName] = useState(suggestedName);
   const [baseBranch, setBaseBranch] = useState(defaultBase);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const selectableBranches = availableBranches.filter(
     (b) => !b.protected && !protectedBranches.includes(b.name)
   );
   const baseBranches = availableBranches;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setError(null);
     if (mode === "select") {
       if (!selectedBranch) { setError("Please select a branch"); return; }
-      onSelect({ action: "select_existing", branchName: selectedBranch });
+      setSubmitting(true);
+      try {
+        await onSelect({ action: "select_existing", branchName: selectedBranch });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to select branch");
+        setSubmitting(false);
+      }
     } else {
       if (!newBranchName.trim()) { setError("Please enter a branch name"); return; }
       if (!/^[a-zA-Z0-9._/-]+$/.test(newBranchName)) {
         setError("Invalid name. Use letters, numbers, ., _, /, -");
         return;
       }
-      onSelect({ action: "create_new", branchName: newBranchName, baseBranch });
+      setSubmitting(true);
+      try {
+        await onSelect({ action: "create_new", branchName: newBranchName, baseBranch });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to create branch");
+        setSubmitting(false);
+      }
     }
   };
 
@@ -107,6 +120,7 @@ export function BranchModal({
                 selectableBranches.map((branch) => (
                   <label
                     key={branch.name}
+                    onClick={() => setSelectedBranch(branch.name)}
                     className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       selectedBranch === branch.name
                         ? "border-[#E8A87C] bg-[#E8A87C]/5"
@@ -200,7 +214,7 @@ export function BranchModal({
           <button
             type="button"
             onClick={onCancel}
-            disabled={isLoading}
+            disabled={isLoading || submitting}
             className="flex-1 px-4 py-2.5 text-sm font-medium text-[#A8A29E] bg-[#292524] border border-[#3F3F46] rounded-xl hover:bg-[#3F3F46] hover:text-[#FAFAF9] transition-all disabled:opacity-50"
           >
             Cancel
@@ -208,13 +222,13 @@ export function BranchModal({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isLoading || (mode === "select" && selectableBranches.length === 0)}
+            disabled={isLoading || submitting || (mode === "select" && selectableBranches.length === 0)}
             className="flex-1 px-4 py-2.5 text-sm font-semibold bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {isLoading ? (
+            {(isLoading || submitting) ? (
               <>
                 <span className="w-4 h-4 border-2 border-[#0C0A09] border-t-transparent rounded-full animate-spin" />
-                Processing...
+                {mode === "create" ? "Creating..." : "Selecting..."}
               </>
             ) : mode === "select" ? (
               "Select Branch"

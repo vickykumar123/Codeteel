@@ -574,10 +574,41 @@ export async function runOrchestrator(
   if (currentPlan && context.workingBranch && isApprovalMessage(userMessage)) {
     onEvent({ type: "thinking", message: "Executing approved plan..." });
 
-    const execResult = await runExecutor(currentPlan, context, executor, chatFn, onEvent);
+    // Capture step failures during execution
+    const stepFailures: { path: string; error: string }[] = [];
+    const wrappedOnEvent = (event: StreamEvent) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const e = event as any;
+      if (event.type === "step_complete" && e.status === "failed" && e.error) {
+        const step = currentPlan?.steps?.find(s => s.id === e.stepId);
+        stepFailures.push({ path: step?.path || "unknown", error: e.error });
+      }
+      onEvent(event);
+    };
+
+    const execResult = await runExecutor(currentPlan, context, executor, chatFn, wrappedOnEvent);
     if (execResult.success) {
       filesChanged = [...new Set([...filesChanged, ...(execResult.filesChanged || [])])];
       const executedPlanTitle = currentPlan.title;
+
+      // Check for partial failures (steps that failed but execution continued)
+      const lastExecutionError = stepFailures.length > 0 ? stepFailures : undefined;
+
+      if (stepFailures.length > 0) {
+        // Partial success — some steps failed
+        currentPlan = undefined;
+        onEvent({ type: "execution_complete", filesChanged });
+
+        const failedList = stepFailures.map(f => `- ${f.path}: ${f.error}`).join("\n");
+        const responseText = `Executed plan "${executedPlanTitle}" with ${stepFailures.length} failed step(s).\n\nSuccessfully changed: ${filesChanged.join(", ") || "none"}\n\nFailed:\n${failedList}`;
+        onEvent({ type: "message", content: responseText });
+
+        return {
+          response: responseText,
+          executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal, lastExecutionError },
+        };
+      }
+
       currentPlan = undefined;
       onEvent({ type: "execution_complete", filesChanged });
 
@@ -589,11 +620,12 @@ export async function runOrchestrator(
         executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal },
       };
     } else {
+      const lastExecutionError = stepFailures.length > 0 ? stepFailures : [{ path: "unknown", error: execResult.error || "Unknown error" }];
       const errorMsg = `Execution failed: ${execResult.error}`;
       onEvent({ type: "error", message: errorMsg });
       return {
         response: errorMsg,
-        executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal },
+        executionState: { filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal, lastExecutionError },
       };
     }
   }
@@ -644,6 +676,15 @@ IMPORTANT: Check if user message is an approval or retry request:
     systemContext += `\n\n## EXECUTION COMPLETED:
 Files already modified: ${filesChanged.join(", ")}
 ${prCreated ? `PR already created: ${prUrl}` : "PR not yet created. Call create_pr only when user asks."}`;
+  }
+
+  // Inject last execution failure context
+  const lastError = initialState?.lastExecutionError;
+  if (lastError && lastError.length > 0) {
+    const failedList = lastError.map(e => `- ${e.path}: ${e.error}`).join("\n");
+    systemContext += `\n\n## LAST EXECUTION FAILURES:
+The following steps failed in the previous execution. If the user asks to retry or fix these, create a NEW plan targeting these files specifically.
+${failedList}`;
   }
 
   // Inject custom instructions
@@ -751,7 +792,18 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
       return { role: m.role, content: m.content };
     });
 
-    const response = await chatFn(llmMessages, toolsToLLMFormat(allTools));
+    // Stream handler: emit partial content as it arrives
+    let isStreaming = false;
+    const onStream = (delta: string) => {
+      if (!isStreaming) {
+        isStreaming = true;
+        onEvent({ type: "message", content: delta, partial: true });
+      } else {
+        onEvent({ type: "message", content: delta, partial: true });
+      }
+    };
+
+    const response = await chatFn(llmMessages, toolsToLLMFormat(allTools), onStream);
 
     // Fallback: OSS models (Ollama) sometimes return tool calls as JSON text
     // instead of proper function calls. Detect and convert them.
@@ -761,11 +813,16 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
         : recoverFromUserMessage(userMessage, filesChanged, prCreated);
       if (recovered) {
         response.tool_calls = [recovered];
+        // Clear streamed content — it was a tool call, not a response
+        if (isStreaming) {
+          onEvent({ type: "message", content: "", partial: false });
+        }
       }
     }
 
-    // No tool calls → final response
+    // No tool calls → final response (streaming already showed it)
     if (!response.tool_calls || response.tool_calls.length === 0) {
+      // Emit final (non-partial) to signal streaming complete
       onEvent({ type: "message", content: response.content });
       const executionState: PersistedExecutionState = {
         filesChanged, currentPlan, prCreated, prUrl, prNumber, searchJournal,
@@ -994,7 +1051,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
       // =============================================
       } else if (toolCall.name === "create_pr") {
         if (prCreated) {
-          result = `PR already created: #${prNumber} - ${prUrl}`;
+          result = `PR already exists: #${prNumber}\nLink: ${prUrl}\n\nInclude the full link in your response.`;
         } else if (filesChanged.length === 0) {
           result = "No changes made yet. Execute a plan first.";
           error = true;
@@ -1012,7 +1069,7 @@ NO working branch is set. Before calling delegate_to_planner, you MUST call requ
             prCreated = true;
             prUrl = prResult.url;
             prNumber = prResult.number;
-            result = `Created PR #${prResult.number}: ${prResult.url}`;
+            result = `PR #${prResult.number} created successfully.\nLink: ${prResult.url}\n\nIMPORTANT: Include the full PR link in your response so the user can click it.`;
             onEvent({ type: "pr_created", url: prResult.url, number: prResult.number });
           } catch (err) {
             const msg = err instanceof Error ? err.message : "Unknown error";

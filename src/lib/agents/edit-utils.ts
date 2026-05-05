@@ -625,7 +625,8 @@ export function validateEdit(
   const ext = filePath.split(".").pop()?.toLowerCase();
 
   // Check for balanced brackets/braces (basic check)
-  if (["ts", "tsx", "js", "jsx", "json", "py"].includes(ext || "")) {
+  // Only for JS/TS/JSON — Python uses parens in docstrings/comments which causes false positives
+  if (["ts", "tsx", "js", "jsx", "json"].includes(ext || "")) {
     const openBraces = (newContent.match(/\{/g) || []).length;
     const closeBraces = (newContent.match(/\}/g) || []).length;
     if (openBraces !== closeBraces) {
