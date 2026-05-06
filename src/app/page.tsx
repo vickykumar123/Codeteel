@@ -61,9 +61,11 @@ export default async function Home() {
             </span>
           </h1>
 
-          <p className="text-base sm:text-lg md:text-xl text-[#A8A29E] leading-relaxed max-w-2xl mx-auto mb-10">
-            Connect your GitHub repo, index your codebase, and start building.
-            Chat from Web, Slack, Telegram, or Discord.
+          <p className="text-base sm:text-lg md:text-xl text-[#A8A29E] leading-relaxed max-w-2xl mx-auto mb-4">
+            The first AI coding agent that runs on your own models and works from Slack, Telegram, Discord, and Web.
+          </p>
+          <p className="text-sm text-[#71717A] max-w-xl mx-auto mb-10">
+            Built on ReAct architecture with chain-of-thought reasoning, human-in-the-loop approval, and deterministic code edits. Zero API cost with local models.
           </p>
 
           {/* CTA */}
@@ -105,6 +107,42 @@ export default async function Home() {
               <span className="text-xs hidden sm:inline">GitHub</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Stats */}
+      <section className="relative max-w-6xl mx-auto px-5 sm:px-6 pb-12">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-[#1C1917] border border-[#292524] rounded-2xl p-6 text-center">
+            <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-[#F5D5C3] via-[#E8A87C] to-[#C9A96E] bg-clip-text text-transparent">$0</div>
+            <div className="text-xs text-[#A8A29E] mt-1.5">API cost with local models</div>
+          </div>
+          <div className="bg-[#1C1917] border border-[#292524] rounded-2xl p-6 text-center">
+            <div className="text-3xl sm:text-4xl font-bold text-[#FAFAF9]">95%+</div>
+            <div className="text-xs text-[#A8A29E] mt-1.5">E2E test success rate</div>
+          </div>
+          <div className="bg-[#1C1917] border border-[#292524] rounded-2xl p-6 text-center">
+            <div className="text-3xl sm:text-4xl font-bold text-[#FAFAF9]">30+</div>
+            <div className="text-xs text-[#A8A29E] mt-1.5">Languages indexed</div>
+          </div>
+          <div className="bg-[#1C1917] border border-[#292524] rounded-2xl p-6 text-center">
+            <div className="text-3xl sm:text-4xl font-bold text-[#FAFAF9]">4</div>
+            <div className="text-xs text-[#A8A29E] mt-1.5">Platforms supported</div>
+          </div>
+        </div>
+      </section>
+
+      {/* Architecture Badges */}
+      <section className="relative max-w-6xl mx-auto px-5 sm:px-6 pb-20">
+        <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+          <ArchBadge icon="brain" label="ReAct Agent" />
+          <ArchBadge icon="thought" label="Chain-of-thought" />
+          <ArchBadge icon="shield" label="Human-in-the-loop" />
+          <ArchBadge icon="code" label="Deterministic edits" />
+          <ArchBadge icon="lock" label="Zero-trust privacy" />
+          <ArchBadge icon="heal" label="Self-healing" />
+          <ArchBadge icon="search" label="Semantic search" />
+          <ArchBadge icon="compress" label="Context compression" />
         </div>
       </section>
 
@@ -326,6 +364,26 @@ export default async function Home() {
 // ===========================================
 // FEATURE CARD
 // ===========================================
+
+function ArchBadge({ icon, label }: { icon: string; label: string }) {
+  const icons: Record<string, React.ReactNode> = {
+    brain: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>,
+    thought: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" /></svg>,
+    shield: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>,
+    code: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" /></svg>,
+    lock: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" /></svg>,
+    heal: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" /></svg>,
+    search: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>,
+    compress: <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" /></svg>,
+  };
+
+  return (
+    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1C1917] border border-[#292524] rounded-full text-[#A8A29E] hover:border-[#E8A87C]/30 hover:text-[#E8A87C] transition-all">
+      <span className="text-[#E8A87C]">{icons[icon]}</span>
+      <span className="text-[11px] font-medium">{label}</span>
+    </div>
+  );
+}
 
 function FeatureCard({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
   return (

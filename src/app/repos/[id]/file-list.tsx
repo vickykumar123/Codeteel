@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Highlight, themes } from "prism-react-renderer";
 
 interface FileItem {
   id: string;
@@ -10,6 +11,7 @@ interface FileItem {
   language: string | null;
   size: number | null;
   summary: string | null;
+  code: string | null;
 }
 
 interface FileListProps {
@@ -296,23 +298,110 @@ function TreeRow({
         </div>
       </button>
 
-      {/* Summary panel */}
-      {isExpanded && node.file?.summary && (
-        <div
-          className="mb-2 bg-[#0C0A09] border border-[#292524] rounded-xl p-4 overflow-hidden"
-          style={{ marginLeft: paddingLeft + 24 }}
-        >
-          <div className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#E8A87C] mb-2">
+      {/* Expanded panel: Summary + Code split */}
+      {isExpanded && (node.file?.summary || node.file?.code) && (
+        <ExpandedFilePanel
+          file={node.file!}
+          marginLeft={paddingLeft + 24}
+        />
+      )}
+    </>
+  );
+}
+
+// ===========================================
+// EXPANDED FILE PANEL (Summary + Code split)
+// ===========================================
+
+// Map file language to Prism language identifier
+const PRISM_LANG_MAP: Record<string, string> = {
+  TypeScript: "typescript", JavaScript: "javascript", Python: "python",
+  Go: "go", Rust: "rust", Java: "java", Kotlin: "kotlin",
+  "C++": "cpp", C: "c", "C#": "csharp", Ruby: "ruby",
+  PHP: "php", Swift: "swift", Scala: "scala", Shell: "bash",
+  SQL: "sql", YAML: "yaml", JSON: "json", Markdown: "markdown",
+  HTML: "html", CSS: "css", Dockerfile: "docker", Makefile: "makefile",
+  GraphQL: "graphql", TOML: "toml",
+};
+
+function ExpandedFilePanel({ file, marginLeft }: { file: FileItem; marginLeft: number }) {
+  const [activeTab, setActiveTab] = useState<"summary" | "code">(file.summary ? "summary" : "code");
+  const lineCount = file.code ? file.code.split("\n").length : 0;
+  const prismLang = PRISM_LANG_MAP[file.language || ""] || "typescript";
+
+  return (
+    <div
+      className="mb-2 bg-[#0C0A09] border border-[#292524] rounded-xl overflow-hidden"
+      style={{ marginLeft }}
+    >
+      {/* Tabs */}
+      <div className="flex items-center gap-1 px-3 py-2 border-b border-[#292524] bg-[#1C1917]">
+        {file.summary && (
+          <button
+            onClick={() => setActiveTab("summary")}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+              activeTab === "summary"
+                ? "bg-[#E8A87C]/10 text-[#E8A87C]"
+                : "text-[#71717A] hover:text-[#A8A29E]"
+            }`}
+          >
             AI Summary
-          </div>
+          </button>
+        )}
+        {file.code && (
+          <button
+            onClick={() => setActiveTab("code")}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+              activeTab === "code"
+                ? "bg-[#E8A87C]/10 text-[#E8A87C]"
+                : "text-[#71717A] hover:text-[#A8A29E]"
+            }`}
+          >
+            Code
+          </button>
+        )}
+        <div className="ml-auto flex items-center gap-2 text-[10px] text-[#71717A]">
+          {file.language && <span>{file.language}</span>}
+          {lineCount > 0 && <span>{lineCount} lines</span>}
+        </div>
+      </div>
+
+      {/* Content */}
+      {activeTab === "summary" && file.summary && (
+        <div className="p-4">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={markdownComponents as Record<string, React.ComponentType>}
           >
-            {node.file.summary}
+            {file.summary}
           </ReactMarkdown>
         </div>
       )}
-    </>
+
+      {activeTab === "code" && file.code && (
+        <Highlight theme={themes.oneDark} code={file.code} language={prismLang}>
+          {({ tokens, getLineProps, getTokenProps }) => (
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <table className="w-full text-xs font-mono">
+                <tbody>
+                  {tokens.map((line, i) => (
+                    <tr key={i} {...getLineProps({ line })} className="hover:bg-[#1C1917]">
+                      <td className="px-3 py-0 text-right text-[#3F3F46] select-none w-10 sticky left-0 bg-[#0C0A09]">
+                        {i + 1}
+                      </td>
+                      <td className="px-3 py-0 whitespace-pre">
+                        {line.map((token, j) => (
+                          <span key={j} {...getTokenProps({ token })} />
+                        ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Highlight>
+      )}
+    </div>
   );
 }

@@ -43,7 +43,7 @@ export default async function RepoDetailPage({ params }: PageProps) {
   const slackInstalled = (slackResult.data || []).length > 0;
 
   const { count: fileCount } = await adminClient.from("file_summaries").select("*", { count: "exact", head: true }).eq("repo_id", id);
-  const { data: files } = await adminClient.from("file_summaries").select("id, path, language, size, summary").eq("repo_id", id).order("path").limit(1000);
+  const { data: files } = await adminClient.from("file_summaries").select("id, path, language, size, summary, code").eq("repo_id", id).order("path").limit(1000);
 
   const statusStyle: Record<string, string> = {
     ready: "bg-green-500/10 text-green-400 border-green-500/20",

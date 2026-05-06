@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Codeteel — AI Coding Agent",
   description: "AI coding agent that understands your codebase. Chat from Web, Slack, Telegram, or Discord. Get plans, approve changes, ship PRs.",
+  icons: {
+    icon: "/logo.svg",
+    apple: "/logo.svg",
+  },
 };
 
 export default function RootLayout({
