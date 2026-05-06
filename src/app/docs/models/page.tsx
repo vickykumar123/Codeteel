@@ -51,6 +51,14 @@ ollama pull deepseek-coder-v2:16b
 # Codeteel auto-discovers available models in Settings`}
       </pre>
 
+      <Callout type="warning">
+        <strong>CORS required for web app.</strong> If you{"'"}re accessing Codeteel from a deployed URL (not localhost), you must enable CORS on Ollama:
+        <br /><br />
+        <strong>Windows:</strong> <Code>set OLLAMA_ORIGINS=* && ollama serve</Code><br />
+        <strong>Mac/Linux:</strong> <Code>OLLAMA_ORIGINS=* ollama serve</Code><br /><br />
+        Without this, the browser cannot reach Ollama due to cross-origin restrictions.
+      </Callout>
+
       <H2>Setting up cloud providers</H2>
       <P>For any cloud provider:</P>
       <ol className="list-decimal list-inside text-sm text-[#A8A29E] space-y-1 ml-4 my-3">

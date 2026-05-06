@@ -183,17 +183,28 @@ function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: strin
       tools?: LLMToolDef[],
       onStream?: (delta: string) => void,
     ): Promise<LLMChatResponse> => {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages,
-          tools: tools && tools.length > 0 ? tools : undefined,
-          tool_choice: tools && tools.length > 0 ? "auto" : undefined,
-          stream: true,
-        }),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            messages,
+            tools: tools && tools.length > 0 ? tools : undefined,
+            tool_choice: tools && tools.length > 0 ? "auto" : undefined,
+            stream: true,
+          }),
+        });
+      } catch (fetchErr) {
+        // CORS or network error — Ollama not reachable from browser
+        throw new Error(
+          "Cannot connect to Ollama. Make sure:\n" +
+          "1. Ollama is running (ollama serve)\n" +
+          "2. CORS is enabled: set OLLAMA_ORIGINS=* before starting Ollama\n" +
+          "3. The URL is correct (default: http://localhost:11434/v1)"
+        );
+      }
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({ error: "Ollama request failed" }));

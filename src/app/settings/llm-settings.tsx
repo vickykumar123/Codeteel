@@ -693,6 +693,20 @@ function ProviderForm({
             <span className="text-xs text-green-600 dark:text-green-400">Connected - {ollamaModels.length} models</span>
           </div>
         )}
+        {isOllama && (
+          <div className="mt-2 p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+            <div className="flex items-start gap-2">
+              <span className="text-amber-400 font-bold text-xs mt-0.5">!</span>
+              <div className="text-xs text-[#A8A29E]">
+                <strong className="text-[#FAFAF9]">CORS required</strong> — If accessing from a deployed URL (not localhost), enable CORS on Ollama:
+                <div className="mt-1.5 space-y-1 font-mono text-[10px] text-[#E8A87C]">
+                  <div><span className="text-[#71717A]">Windows:</span> set OLLAMA_ORIGINS=* && ollama serve</div>
+                  <div><span className="text-[#71717A]">Mac/Linux:</span> OLLAMA_ORIGINS=* ollama serve</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* API Key (not for Ollama) */}
