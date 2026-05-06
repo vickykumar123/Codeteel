@@ -51,17 +51,18 @@ export default async function NewChatPage({ params }: PageProps) {
   // Get recent conversations
   const { data: recentConversations } = await adminClient
     .from("conversations")
-    .select("id, title, updated_at")
+    .select("id, title, updated_at, platform")
     .eq("repo_id", id)
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
-    .limit(10);
+    .limit(25);
 
   // Transform conversations to expected types
   const conversations = (recentConversations || []).map((c) => ({
     id: c.id,
     title: c.title || "Untitled",
     updated_at: c.updated_at || new Date().toISOString(),
+    platform: (c as { platform?: string }).platform || "web",
   }));
 
   return (

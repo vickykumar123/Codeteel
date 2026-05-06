@@ -141,12 +141,13 @@ async function processFile(
   let summary: string;
   try {
     summary = await generateFileSummaryBrowser(llmConfig, file.path, code);
-  } catch {
+  } catch (err) {
     // Retry once
     try {
       summary = await generateFileSummaryBrowser(llmConfig, file.path, code);
-    } catch {
-      summary = `File: ${file.path}`;
+    } catch (retryErr) {
+      const msg = retryErr instanceof Error ? retryErr.message : "LLM summary failed";
+      return { success: false, error: msg };
     }
   }
 
@@ -196,6 +197,10 @@ export async function runBrowserIndexer(options: IndexerOptions): Promise<IndexR
         failedFiles++;
         failedPaths.push({ path: batch[j].path, error: errorMsg });
         await recordFailure(repoId, jobId, batch[j].path, errorMsg);
+
+        // Stop indexing on LLM errors — don't silently continue with broken summaries
+        await pauseJob(repoId, jobId);
+        return { processedFiles, failedFiles, totalFiles: files.length, failedPaths };
       }
     }
   }

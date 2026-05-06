@@ -19,19 +19,18 @@ interface RequestBody {
 }
 
 export async function POST(request: Request) {
-  // Authenticate
-  const supabase = await createServerSupabaseClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Parse body + authenticate + fetch provider in parallel
+  const [body, supabase] = await Promise.all([
+    request.json() as Promise<RequestBody>,
+    createServerSupabaseClient(),
+  ]);
 
+  const { messages, tools } = body;
+
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  // Parse body
-  const body: RequestBody = await request.json();
-  const { messages, tools } = body;
 
   if (!messages || !Array.isArray(messages)) {
     return NextResponse.json(

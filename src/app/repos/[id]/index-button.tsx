@@ -113,13 +113,13 @@ export function IndexButton({
           <>
             <button
               onClick={indexer.resume}
-              className="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] hover:opacity-90 transition-opacity"
             >
               Resume
             </button>
             <button
               onClick={indexer.startFresh}
-              className="px-4 py-2 rounded-md text-sm font-medium bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              className="px-4 py-2 rounded-xl text-sm font-medium bg-[#292524] text-[#A8A29E] border border-[#3F3F46] hover:bg-[#3F3F46] hover:text-[#FAFAF9] transition-all"
             >
               Start Fresh
             </button>
@@ -139,9 +139,13 @@ export function IndexButton({
         {indexer.status === "indexing" && (
           <button
             onClick={indexer.cancel}
-            className="px-4 py-2 rounded-md text-sm font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+            disabled={indexer.cancelling}
+            className="px-4 py-2 rounded-md text-sm font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors disabled:opacity-70 flex items-center gap-2"
           >
-            Cancel
+            {indexer.cancelling && (
+              <span className="animate-spin w-3.5 h-3.5 border-2 border-red-500 border-t-transparent rounded-full" />
+            )}
+            {indexer.cancelling ? "Cancelling..." : "Cancel"}
           </button>
         )}
 
@@ -156,7 +160,7 @@ export function IndexButton({
           ) : (
             <button
               onClick={indexer.start}
-              className="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] hover:opacity-90 transition-opacity"
             >
               {renderButtonLabel(indexer.status, currentStatus)}
             </button>

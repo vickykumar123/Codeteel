@@ -51,6 +51,7 @@ export interface OrchestratorState {
   currentPlan: Plan | null;
   workingBranch: string | null;
   branchSelectionRequest: BranchSelectionRequest | null;
+  isLoadingBranches: boolean;
   filesChanged: string[];
   prUrl: string | null;
   prNumber: number | null;
@@ -91,21 +92,12 @@ interface UseOrchestratorOptions {
 }
 
 // ===========================================
-// APPROVAL/REJECTION DETECTION
+// APPROVAL/REJECTION DETECTION (from constants — single source of truth)
 // ===========================================
 
-const APPROVAL_PHRASES = [
-  "yes", "y", "go ahead", "proceed", "do it", "ok", "okay",
-  "sure", "yep", "yeah", "looks good", "approve", "lgtm",
-  "ship it", "make the changes", "sounds good", "perfect",
-  "great", "let's do it", "yes please", "continue",
-  "try again", "retry", "try it again", "run it again",
-];
-
-const REJECTION_PHRASES = [
-  "no", "n", "cancel", "stop", "reject", "don't", "nope",
-  "nevermind", "never mind", "scratch that", "undo",
-];
+import { APPROVAL_PHRASES, REJECTION_PHRASES } from "@/lib/agents/constants";
+import { compressConversation } from "@/lib/agents/compression";
+import { securityScan, reviewPR, listOpenPRs } from "@/lib/agents/reviewer";
 
 function isApprovalText(message: string): boolean {
   const normalized = message.toLowerCase().trim();
@@ -130,6 +122,50 @@ function isRejectionText(message: string): boolean {
 }
 
 // ===========================================
+// SLASH COMMANDS
+// ===========================================
+
+const HELP_TEXT = `**Available Commands:**
+
+| Command | Description |
+|---------|-------------|
+| \`/help\` | Show this help message |
+| \`/branch [name]\` | Switch branch or open branch selector |
+| \`/branches\` | List available branches |
+| \`/reset\` | Clear execution state (plan, files changed) |
+| \`/clear\` | Start a new conversation |
+| \`/security [path]\` | Security scan (full, scoped, or PR) |
+| \`/review pr [N]\` | Review a PR or list open PRs |
+| \`/compact\` | Compress conversation to save tokens |
+| \`/pr\` | Create PR for current changes |
+| \`/diff\` | Show all file changes in this conversation |
+| \`/undo\` | Revert last file change |
+
+**Examples:**
+- \`/security src/auth/\` — scan auth directory
+- \`/security pr 42\` — scan PR #42 diff
+- \`/review pr 15\` — review PR #15
+- \`/branch feature/new-api\` — switch to branch`;
+
+/** Check if text is a slash command */
+function isCommand(text: string): boolean {
+  return text.startsWith("/");
+}
+
+/** Parse a slash command into name + args */
+function parseCommand(text: string): { name: string; args: string } {
+  const trimmed = text.trim();
+  const spaceIdx = trimmed.indexOf(" ");
+  if (spaceIdx === -1) {
+    return { name: trimmed.slice(1).toLowerCase(), args: "" };
+  }
+  return {
+    name: trimmed.slice(1, spaceIdx).toLowerCase(),
+    args: trimmed.slice(spaceIdx + 1).trim(),
+  };
+}
+
+// ===========================================
 // CHAT FUNCTION
 // ===========================================
 
@@ -138,13 +174,14 @@ function isRejectionText(message: string): boolean {
 
 function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: string): ChatFn {
   if (llmProvider === "ollama") {
-    // Direct browser → Ollama (OpenAI-compatible API, no proxy needed)
+    // Direct browser → Ollama (OpenAI-compatible streaming API)
     const baseUrl = llmBaseUrl || "http://localhost:11434/v1";
     const model = llmModel || "llama3";
 
     return async (
       messages: LLMChatMessage[],
-      tools?: LLMToolDef[]
+      tools?: LLMToolDef[],
+      onStream?: (delta: string) => void,
     ): Promise<LLMChatResponse> => {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
@@ -154,7 +191,7 @@ function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: strin
           messages,
           tools: tools && tools.length > 0 ? tools : undefined,
           tool_choice: tools && tools.length > 0 ? "auto" : undefined,
-          temperature: undefined,
+          stream: true,
         }),
       });
 
@@ -163,23 +200,66 @@ function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: strin
         throw new Error(data.error?.message || data.error || `Ollama request failed (${response.status})`);
       }
 
-      const data = await response.json();
-      const choice = data.choices?.[0];
-      const message = choice?.message;
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No response body");
 
-      // Parse OpenAI-compatible response into LLMChatResponse
-      const toolCalls = message?.tool_calls
-        ?.filter((tc: { type: string }) => tc.type === "function")
-        .map((tc: { id: string; type: string; function: { name: string; arguments: string } }) => ({
-          id: tc.id,
-          type: "function" as const,
-          function: { name: tc.function.name, arguments: tc.function.arguments },
-        }));
+      const decoder = new TextDecoder();
+      let content = "";
+      const toolCallMap = new Map<number, { id: string; name: string; arguments: string }>();
+      let buffer = "";
 
-      return {
-        content: message?.content || "",
-        tool_calls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
-      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const json = line.slice(6).trim();
+          if (!json || json === "[DONE]") continue;
+
+          try {
+            const chunk = JSON.parse(json);
+            const delta = chunk.choices?.[0]?.delta;
+            if (!delta) continue;
+
+            if (delta.content) {
+              content += delta.content;
+              if (onStream && toolCallMap.size === 0) {
+                onStream(delta.content);
+              }
+            }
+
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                const existing = toolCallMap.get(idx) || { id: "", name: "", arguments: "" };
+                if (tc.id) existing.id = tc.id;
+                if (tc.function?.name) existing.name += tc.function.name;
+                if (tc.function?.arguments) existing.arguments += tc.function.arguments;
+                toolCallMap.set(idx, existing);
+              }
+            }
+          } catch {
+            continue;
+          }
+        }
+      }
+
+      const toolCalls = toolCallMap.size > 0
+        ? Array.from(toolCallMap.entries())
+            .sort(([a], [b]) => a - b)
+            .map(([, tc]) => ({
+              id: tc.id,
+              type: "function" as const,
+              function: { name: tc.name, arguments: tc.arguments },
+            }))
+        : undefined;
+
+      return { content, tool_calls: toolCalls };
     };
   }
 
@@ -187,7 +267,8 @@ function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: strin
   // Reads SSE stream to keep Vercel connection alive past 15s timeout
   return async (
     messages: LLMChatMessage[],
-    tools?: LLMToolDef[]
+    tools?: LLMToolDef[],
+    onStream?: (delta: string) => void,
   ): Promise<LLMChatResponse> => {
     const response = await fetch("/api/llm/chat", {
       method: "POST",
@@ -228,6 +309,9 @@ function createChatFn(llmProvider: string, llmBaseUrl?: string, llmModel?: strin
 
           if (event.type === "content") {
             content += event.text;
+            if (onStream && toolCallMap.size === 0) {
+              onStream(event.text);
+            }
           } else if (event.type === "tool_call") {
             const idx = event.index as number;
             const existing = toolCallMap.get(idx);
@@ -304,6 +388,10 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
   );
   const [branchSelectionRequest, setBranchSelectionRequest] =
     useState<BranchSelectionRequest | null>(null);
+  const [isLoadingBranches, setIsLoadingBranches] = useState(false);
+  const branchLoadingRef = useRef(false);
+  const pendingMessageRef = useRef<string | null>(null);
+  const workingBranchRef = useRef<string | null>(workingBranch);
   const [filesChanged, setFilesChanged] = useState<string[]>(
     initialExecutionState?.filesChanged || []
   );
@@ -441,6 +529,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
 
         case "tool_call":
           setToolActivity(`Using ${event.tool}...`);
+          setStreamingContent(""); // Clear any partial streaming from previous LLM call
           break;
 
         case "tool_result":
@@ -478,8 +567,10 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
         }
 
         case "branch_selection_required":
+          // pendingMessageRef already set at start of runAgent
           // The orchestrator sends empty availableBranches — fetch real list from API
-          setToolActivity("Loading branches...");
+          setIsLoadingBranches(true);
+          branchLoadingRef.current = true;
           executorRef.current
             .listBranches(repoId)
             .then((result) => {
@@ -489,12 +580,13 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
                 defaultBase: result.defaultBranch,
                 protectedBranches: result.protectedBranches,
               });
-              setToolActivity(null);
+              setIsLoadingBranches(false);
+              branchLoadingRef.current = false;
             })
             .catch(() => {
-              // Fallback: show modal with whatever the event had
               setBranchSelectionRequest(event.request);
-              setToolActivity(null);
+              setIsLoadingBranches(false);
+              branchLoadingRef.current = false;
             });
           break;
 
@@ -668,6 +760,9 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
     async (userMessage: string) => {
       if (isRunning) return;
 
+      // Save in case branch selection triggers and we need to re-send
+      pendingMessageRef.current = userMessage;
+
       setIsRunning(true);
       setError(null);
       setStreamingContent("");
@@ -692,7 +787,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
           githubToken: "", // Not needed (goes through API proxy)
           repoFullName,
           defaultBranch,
-          workingBranch: workingBranch || undefined,
+          workingBranch: workingBranchRef.current || undefined,
           messages: agentMessages,
           llmConfig: {
             provider: llmProvider as LLMConfig["provider"],
@@ -733,10 +828,15 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
 
         // Add assistant response to messages
         if (result.response) {
+          let responseContent = result.response.trim();
+          if (/confirm.*branch|select.*branch|branch.*you.*like|choose.*branch/i.test(responseContent)) {
+            responseContent = "Please select a branch to continue.";
+          }
+
           const assistantMsg: Message = {
             id: `assistant-${Date.now()}`,
             role: "assistant",
-            content: result.response,
+            content: responseContent,
             created_at: new Date().toISOString(),
           };
           setMessages((prev) => [...prev, assistantMsg]);
@@ -752,6 +852,8 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
         // Update plan state
         if (result.plan) {
           setCurrentPlan(result.plan);
+        } else {
+          setCurrentPlan(null);
         }
 
         // Save execution state to DB in background
@@ -788,7 +890,8 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
 
   // Shared helper: fetch branches from API and show modal
   const fetchAndShowBranchSelector = useCallback(
-    async (suggestedName = "feature/codebot-changes") => {
+    async (suggestedName = "feature/codeteel-changes") => {
+      setIsLoadingBranches(true);
       try {
         const result = await executorRef.current.listBranches(repoId);
         setBranchSelectionRequest({
@@ -800,6 +903,8 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to load branches";
         setError(msg);
+      } finally {
+        setIsLoadingBranches(false);
       }
     },
     [repoId]
@@ -875,12 +980,370 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
   }, [conversationId, saveMessageToDB, saveExecutionStateToDB]);
 
   // ===========================================
+  // NEW CHAT
+  // ===========================================
+
+  const newChat = useCallback(() => {
+    setMessages([]);
+    setConversationId(undefined);
+    conversationIdRef.current = undefined;
+    setStreamingContent("");
+    setToolActivity(null);
+    setError(null);
+    setCurrentPlan(null);
+    setWorkingBranch(null);
+    setBranchSelectionRequest(null);
+    setFilesChanged([]);
+    setPrUrl(null);
+    setPrNumber(null);
+    setExecutionProgress(null);
+    executionStateRef.current = { filesChanged: [] };
+  }, []);
+
+  // ===========================================
+  // SLASH COMMAND HANDLER
+  // ===========================================
+
+  // Ephemeral: only add to React state (help, branches, unknown, etc.)
+  const addSystemMessage = useCallback((content: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `system-${Date.now()}`,
+        role: "assistant" as const,
+        content,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+  }, []);
+
+  // Persistent: add to React state AND save to DB
+  const addAndSaveMessage = useCallback(
+    (convId: string, role: "user" | "assistant", content: string, metadata?: Record<string, unknown>) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${role}-${Date.now()}`,
+          role,
+          content,
+          metadata,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      saveMessageToDB(convId, role, content, metadata).catch(console.error);
+    },
+    [saveMessageToDB]
+  );
+
+  // Commands that persist results to DB
+  const PERSISTENT_COMMANDS = new Set(["security", "review", "compact", "diff", "reset", "pr", "undo"]);
+
+  const handleCommand = useCallback(
+    async (input: string): Promise<boolean> => {
+      if (!isCommand(input)) return false;
+
+      const { name, args } = parseCommand(input);
+      const shouldPersist = PERSISTENT_COMMANDS.has(name);
+
+      // Auto-create conversation for persistent commands
+      let convId = conversationIdRef.current;
+      if (shouldPersist && !convId) {
+        convId = await ensureConversation(input);
+      }
+
+      // Show the command as a user message
+      if (shouldPersist && convId) {
+        addAndSaveMessage(convId, "user", input);
+      } else {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `user-${Date.now()}`,
+            role: "user",
+            content: input,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+      }
+
+      // Helper: add response (persistent or ephemeral based on command)
+      const respond = (content: string, metadata?: Record<string, unknown>) => {
+        if (shouldPersist && convId) {
+          addAndSaveMessage(convId, "assistant", content, metadata);
+        } else {
+          addSystemMessage(content);
+        }
+      };
+
+      switch (name) {
+        // ── /help ── (ephemeral)
+        case "help": {
+          addSystemMessage(HELP_TEXT);
+          return true;
+        }
+
+        // ── /clear ── (ephemeral — destroys conversation)
+        case "clear": {
+          newChat();
+          window.history.replaceState({}, "", `/repos/${repoId}/chat`);
+          return true;
+        }
+
+        // ── /reset ── (persistent)
+        case "reset": {
+          setCurrentPlan(null);
+          setFilesChanged([]);
+          setPrUrl(null);
+          setPrNumber(null);
+          setExecutionProgress(null);
+          setError(null);
+          executionStateRef.current = { filesChanged: [] };
+          if (convId) {
+            saveExecutionStateToDB(convId, { filesChanged: [] }).catch(console.error);
+          }
+          respond("Execution state cleared. Plan, files changed, and PR state have been reset.");
+          return true;
+        }
+
+        // ── /branch [name] ── (ephemeral)
+        case "branch": {
+          if (args) {
+            setWorkingBranch(args);
+            workingBranchRef.current = args;
+            if (convId) {
+              fetch(`/api/conversations/${convId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ working_branch: args }),
+              }).catch(console.error);
+            }
+            addSystemMessage(`Switched to branch \`${args}\`.`);
+          } else {
+            await fetchAndShowBranchSelector();
+          }
+          return true;
+        }
+
+        // ── /branches ── (ephemeral)
+        case "branches": {
+          setToolActivity("Loading branches...");
+          try {
+            const result = await executorRef.current.listBranches(repoId);
+            const current = workingBranch;
+            const list = result.branches
+              .map((b) => {
+                const marker = b.name === current ? " **(current)**" : "";
+                const protectedBadge = b.protected ? " (protected)" : "";
+                return `- \`${b.name}\`${marker}${protectedBadge}`;
+              })
+              .join("\n");
+            addSystemMessage(`**Branches:**\n\n${list}\n\nDefault: \`${result.defaultBranch}\``);
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Failed to list branches";
+            addSystemMessage(`Error: ${msg}`);
+          }
+          setToolActivity(null);
+          return true;
+        }
+
+        // ── /security [path | pr N] ── (persistent)
+        case "security": {
+          setIsRunning(true);
+          setToolActivity("Running security scan...");
+          try {
+            let scanPath: string | undefined;
+            let scanPR: number | undefined;
+
+            const prMatch = args.match(/^pr\s+(\d+)$/i);
+            if (prMatch) {
+              scanPR = parseInt(prMatch[1], 10);
+            } else if (args) {
+              scanPath = args;
+            }
+
+            const context: AgentContext = {
+              repoId,
+              userId: "",
+              conversationId: convId || "",
+              githubToken: "",
+              repoFullName,
+              defaultBranch,
+              workingBranch: workingBranch || undefined,
+              messages: [],
+              llmConfig: { provider: llmProvider as LLMConfig["provider"], baseUrl: llmBaseUrl || "", model: llmModel || "" },
+              embeddingConfig: { provider: "openai", apiKey: "" },
+            };
+
+            const result = await securityScan(
+              context, executorRef.current, chatFnRef.current,
+              (e) => { if (e.type === "thinking") setToolActivity(e.message); },
+              scanPath, scanPR,
+            );
+            respond(result.error || result.report, { type: "security_scan", scope: scanPR ? `pr:${scanPR}` : scanPath || "full" });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Security scan failed";
+            respond(`Error: ${msg}`);
+          }
+          setIsRunning(false);
+          setToolActivity(null);
+          return true;
+        }
+
+        // ── /review pr [N] ── (persistent)
+        case "review": {
+          setIsRunning(true);
+          setToolActivity("Reviewing...");
+          try {
+            const prMatch = args.match(/^pr(?:\s+(\d+))?$/i);
+            if (!prMatch) {
+              respond("Usage: `/review pr` (list PRs) or `/review pr 42` (review specific PR)");
+              setIsRunning(false);
+              setToolActivity(null);
+              return true;
+            }
+
+            const context: AgentContext = {
+              repoId,
+              userId: "",
+              conversationId: convId || "",
+              githubToken: "",
+              repoFullName,
+              defaultBranch,
+              workingBranch: workingBranch || undefined,
+              messages: [],
+              llmConfig: { provider: llmProvider as LLMConfig["provider"], baseUrl: llmBaseUrl || "", model: llmModel || "" },
+              embeddingConfig: { provider: "openai", apiKey: "" },
+            };
+
+            const num = prMatch[1] ? parseInt(prMatch[1], 10) : undefined;
+            if (!num) {
+              const list = await listOpenPRs(context, executorRef.current);
+              respond(list, { type: "pr_list" });
+            } else {
+              const result = await reviewPR(
+                num, context, executorRef.current, chatFnRef.current,
+                (e) => { if (e.type === "thinking") setToolActivity(e.message); },
+              );
+              respond(result.error || result.review, { type: "pr_review", prNumber: num });
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Review failed";
+            respond(`Error: ${msg}`);
+          }
+          setIsRunning(false);
+          setToolActivity(null);
+          return true;
+        }
+
+        // ── /compact ── (persistent)
+        case "compact": {
+          if (!convId) {
+            addSystemMessage("No conversation to compact.");
+            return true;
+          }
+          setIsRunning(true);
+          setToolActivity("Compressing conversation...");
+          try {
+            const existing = await executorRef.current.getChatSummary(convId);
+            const result = await compressConversation(
+              convId,
+              executorRef.current,
+              chatFnRef.current,
+              existing,
+              0,
+            );
+            if (result) {
+              respond(`Conversation compressed. ${result.tokensCompressed.toLocaleString()} tokens summarized.`, { type: "compact", tokensCompressed: result.tokensCompressed });
+            } else {
+              respond("Nothing to compress — conversation is too short.");
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Compression failed";
+            respond(`Error: ${msg}`);
+          }
+          setIsRunning(false);
+          setToolActivity(null);
+          return true;
+        }
+
+        // ── /pr ── (persistent — delegates to orchestrator)
+        case "pr": {
+          if (!workingBranch) {
+            respond("No working branch set. Select a branch first with `/branch`.");
+            return true;
+          }
+          if (filesChanged.length === 0) {
+            respond("No files have been changed. Make some changes first.");
+            return true;
+          }
+          if (prUrl) {
+            respond(`PR already created: ${prUrl}`);
+            return true;
+          }
+          await runAgent("Create a pull request for the changes made");
+          return true;
+        }
+
+        // ── /diff ── (persistent)
+        case "diff": {
+          if (filesChanged.length === 0) {
+            respond("No files have been changed in this conversation.");
+            return true;
+          }
+          const fileList = filesChanged.map((f) => `- \`${f}\``).join("\n");
+          let diffMsg = `**Files changed (${filesChanged.length}):**\n\n${fileList}`;
+          if (workingBranch) {
+            diffMsg += `\n\nBranch: \`${workingBranch}\``;
+          }
+          if (prUrl) {
+            diffMsg += `\nPR: ${prUrl}`;
+          }
+          respond(diffMsg, { type: "diff", filesChanged });
+          return true;
+        }
+
+        // ── /undo ── (persistent — delegates to orchestrator)
+        case "undo": {
+          if (!workingBranch) {
+            respond("No working branch set. Nothing to undo.");
+            return true;
+          }
+          if (filesChanged.length === 0) {
+            respond("No file changes to undo.");
+            return true;
+          }
+          await runAgent(`Revert the last file change on branch ${workingBranch}. The last changed file was: ${filesChanged[filesChanged.length - 1]}`);
+          return true;
+        }
+
+        default: {
+          addSystemMessage(`Unknown command: \`/${name}\`. Type \`/help\` for available commands.`);
+          return true;
+        }
+      }
+    },
+    [
+      repoId, repoFullName, defaultBranch, workingBranch,
+      filesChanged, prUrl, llmProvider, llmBaseUrl, llmModel,
+      newChat, fetchAndShowBranchSelector, runAgent, ensureConversation,
+      addSystemMessage, addAndSaveMessage, saveExecutionStateToDB,
+    ]
+  );
+
+  // ===========================================
   // SEND MESSAGE (with approval/rejection guard)
   // ===========================================
 
   const sendMessage = useCallback(
     async (content: string) => {
       if (!content.trim() || isRunning) return;
+
+      // Guard 0: Slash commands (before everything else)
+      if (isCommand(content.trim())) {
+        await handleCommand(content.trim());
+        return;
+      }
 
       // Guard 2: Text approval/rejection (before LLM)
       // handleApprove/handleReject add their own user messages, so skip adding one here
@@ -907,7 +1370,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
       // Normal message → run orchestrator
       await runAgent(content);
     },
-    [isRunning, currentPlan, runAgent, handleApprove, handleReject]
+    [isRunning, currentPlan, runAgent, handleApprove, handleReject, handleCommand]
   );
 
   // ===========================================
@@ -927,6 +1390,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
         }
 
         setWorkingBranch(branchName);
+        workingBranchRef.current = branchName;
         setBranchSelectionRequest(null);
 
         // Save to conversation if it exists
@@ -939,11 +1403,16 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
           });
         }
 
-        // If we were waiting on branch to approve, now approve
+        // Re-send the pending message or approve the plan
         if (currentPlan) {
-          // Small delay so state updates propagate
           setTimeout(() => {
             runAgent("yes, proceed with the plan");
+          }, 100);
+        } else if (pendingMessageRef.current) {
+          const msg = pendingMessageRef.current;
+          pendingMessageRef.current = null;
+          setTimeout(() => {
+            runAgent(msg);
           }, 100);
         }
       } catch (err) {
@@ -980,26 +1449,6 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
     };
   }, []);
 
-  // ===========================================
-  // NEW CHAT
-  // ===========================================
-
-  const newChat = useCallback(() => {
-    setMessages([]);
-    setConversationId(undefined);
-    conversationIdRef.current = undefined;
-    setStreamingContent("");
-    setToolActivity(null);
-    setError(null);
-    setCurrentPlan(null);
-    setWorkingBranch(null);
-    setBranchSelectionRequest(null);
-    setFilesChanged([]);
-    setPrUrl(null);
-    setPrNumber(null);
-    setExecutionProgress(null);
-    executionStateRef.current = { filesChanged: [] };
-  }, []);
 
   // ===========================================
   // RETURN
@@ -1016,6 +1465,7 @@ export function useOrchestrator(options: UseOrchestratorOptions) {
       currentPlan,
       workingBranch,
       branchSelectionRequest,
+      isLoadingBranches,
       filesChanged,
       prUrl,
       prNumber,

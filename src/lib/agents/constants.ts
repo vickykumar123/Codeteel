@@ -7,7 +7,7 @@ export const MAX_ORCHESTRATOR_ITERATIONS = 20;
 export const SAME_ACTION_LIMIT = 3;
 
 // --- Planner ---
-export const MAX_PLANNER_ITERATIONS = 15;
+export const MAX_PLANNER_ITERATIONS = 10;
 
 // --- Search ---
 export const MAX_SEARCH_RESULTS = 20;
@@ -40,6 +40,26 @@ export const LLM_PROVIDER_BASE_URLS: Record<string, string> = {
   fireworks: "https://api.fireworks.ai/inference/v1",
   together:  "https://api.together.xyz/v1",
 };
+
+// --- Approval/Rejection/Pause Phrases ---
+export const APPROVAL_PHRASES = [
+  "yes", "y", "go ahead", "proceed", "do it", "ok", "okay",
+  "sure", "yep", "yeah", "looks good", "approve", "lgtm",
+  "ship it", "make the changes", "sounds good", "perfect",
+  "great", "let's do it", "yes please", "continue",
+  "try again", "retry", "try it again", "run it again",
+];
+
+export const REJECTION_PHRASES = [
+  "no", "n", "reject", "don't", "nope",
+  "nevermind", "never mind", "scratch that", "undo",
+  "not what i want", "wrong", "try something else",
+  "different approach", "start over",
+];
+
+export const PAUSE_PHRASES = [
+  "stop", "cancel", "wait", "hold on", "pause", "not now", "later",
+];
 
 // --- Chat Compression ---
 /** Token threshold to trigger compression */

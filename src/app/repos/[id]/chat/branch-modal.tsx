@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { BranchInfo, BranchSelectionResponse } from "@/lib/agents/types";
 
 interface BranchModalProps {
@@ -9,7 +9,7 @@ interface BranchModalProps {
   suggestedName: string;
   defaultBase: string;
   protectedBranches: string[];
-  onSelect: (selection: BranchSelectionResponse) => void;
+  onSelect: (selection: BranchSelectionResponse) => void | Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
 }
@@ -29,238 +29,206 @@ export function BranchModal({
   const [newBranchName, setNewBranchName] = useState(suggestedName);
   const [baseBranch, setBaseBranch] = useState(defaultBase);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Filter out protected branches for selection
   const selectableBranches = availableBranches.filter(
     (b) => !b.protected && !protectedBranches.includes(b.name)
   );
-
-  // All branches available as base for new branch creation
   const baseBranches = availableBranches;
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setError(null);
-
     if (mode === "select") {
-      if (!selectedBranch) {
-        setError("Please select a branch");
-        return;
+      if (!selectedBranch) { setError("Please select a branch"); return; }
+      setSubmitting(true);
+      try {
+        await onSelect({ action: "select_existing", branchName: selectedBranch });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to select branch");
+        setSubmitting(false);
       }
-      onSelect({
-        action: "select_existing",
-        branchName: selectedBranch,
-      });
     } else {
-      if (!newBranchName.trim()) {
-        setError("Please enter a branch name");
+      if (!newBranchName.trim()) { setError("Please enter a branch name"); return; }
+      if (!/^[a-zA-Z0-9._/-]+$/.test(newBranchName)) {
+        setError("Invalid name. Use letters, numbers, ., _, /, -");
         return;
       }
-      // Validate branch name
-      const branchNameRegex = /^[a-zA-Z0-9._/-]+$/;
-      if (!branchNameRegex.test(newBranchName)) {
-        setError("Invalid branch name. Use only letters, numbers, ., _, /, -");
-        return;
+      setSubmitting(true);
+      try {
+        await onSelect({ action: "create_new", branchName: newBranchName, baseBranch });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to create branch");
+        setSubmitting(false);
       }
-      onSelect({
-        action: "create_new",
-        branchName: newBranchName,
-        baseBranch,
-      });
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/50"
-        onClick={onCancel}
-      />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
 
       {/* Modal */}
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-          <span className="text-xl">🌿</span>
-          Select Working Branch
-        </h2>
-
-        {/* Mode Toggle */}
-        <div className="flex gap-2 mb-4">
-          <button
-            type="button"
-            onClick={() => setMode("select")}
-            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-              mode === "select"
-                ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
-          >
-            Select Existing
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("create")}
-            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-              mode === "create"
-                ? "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300"
-                : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-            }`}
-          >
-            Create New
-          </button>
+      <div className="relative bg-[#1C1917] border border-[#292524] rounded-2xl shadow-2xl shadow-black/40 w-full max-w-md overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-5 border-b border-[#292524]">
+          <h2 className="text-base font-semibold text-[#FAFAF9] flex items-center gap-2">
+            <svg className="w-4.5 h-4.5 text-[#E8A87C]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 7.5L7.5 3m0 0L12 7.5M7.5 3v13.5m13.5 0L16.5 21m0 0L12 16.5m4.5 4.5V7.5" />
+            </svg>
+            Select Working Branch
+          </h2>
+          <p className="text-xs text-[#71717A] mt-1">Changes will be committed to this branch</p>
         </div>
 
-        {mode === "select" ? (
-          /* Select Existing Branch */
-          <div className="space-y-2 max-h-60 overflow-y-auto">
-            {selectableBranches.length === 0 ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">
-                No branches available. Create a new branch to continue.
-              </p>
-            ) : (
-              selectableBranches.map((branch) => (
-                <label
-                  key={branch.name}
-                  className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${
-                    selectedBranch === branch.name
-                      ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
-                      : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="branch"
-                    value={branch.name}
-                    checked={selectedBranch === branch.name}
-                    onChange={(e) => setSelectedBranch(e.target.value)}
-                    className="text-blue-600"
-                  />
-                  <span className="flex-1 text-sm text-gray-900 dark:text-white font-mono">
-                    {branch.name}
-                  </span>
-                  {branch.aheadBy !== undefined && branch.aheadBy > 0 && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {branch.aheadBy} ahead
+        <div className="p-6">
+          {/* Mode Toggle */}
+          <div className="flex gap-1 p-1 bg-[#0C0A09] rounded-xl mb-5">
+            <button
+              type="button"
+              onClick={() => setMode("select")}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                mode === "select"
+                  ? "bg-[#E8A87C]/10 text-[#E8A87C] border border-[#E8A87C]/20"
+                  : "text-[#A8A29E] hover:text-[#FAFAF9]"
+              }`}
+            >
+              Select Existing
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("create")}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                mode === "create"
+                  ? "bg-[#E8A87C]/10 text-[#E8A87C] border border-[#E8A87C]/20"
+                  : "text-[#A8A29E] hover:text-[#FAFAF9]"
+              }`}
+            >
+              Create New
+            </button>
+          </div>
+
+          {mode === "select" ? (
+            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+              {selectableBranches.length === 0 ? (
+                <p className="text-sm text-[#71717A] py-6 text-center">
+                  No branches available. Create a new one.
+                </p>
+              ) : (
+                selectableBranches.map((branch) => (
+                  <label
+                    key={branch.name}
+                    onClick={() => setSelectedBranch(branch.name)}
+                    className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                      selectedBranch === branch.name
+                        ? "border-[#E8A87C] bg-[#E8A87C]/5"
+                        : "border-[#292524] hover:border-[#3F3F46] hover:bg-[#292524]/50"
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                      selectedBranch === branch.name ? "border-[#E8A87C]" : "border-[#3F3F46]"
+                    }`}>
+                      {selectedBranch === branch.name && (
+                        <div className="w-2 h-2 rounded-full bg-[#E8A87C]" />
+                      )}
+                    </div>
+                    <span className="flex-1 text-sm text-[#FAFAF9] font-mono truncate">
+                      {branch.name}
                     </span>
-                  )}
-                </label>
-              ))
-            )}
+                    {branch.aheadBy !== undefined && branch.aheadBy > 0 && (
+                      <span className="text-[10px] text-[#71717A]">{branch.aheadBy} ahead</span>
+                    )}
+                  </label>
+                ))
+              )}
 
-            {/* Show protected branches as disabled */}
-            {availableBranches
-              .filter((b) => b.protected || protectedBranches.includes(b.name))
-              .map((branch) => (
-                <div
-                  key={branch.name}
-                  className="flex items-center gap-3 p-3 rounded-md border border-gray-200 dark:border-gray-700 opacity-50"
-                >
-                  <input type="radio" disabled className="text-gray-400" />
-                  <span className="flex-1 text-sm text-gray-500 dark:text-gray-400 font-mono">
-                    {branch.name}
-                  </span>
-                  <span className="text-xs text-gray-400 flex items-center gap-1">
-                    🔒 Protected
-                  </span>
-                </div>
-              ))}
-          </div>
-        ) : (
-          /* Create New Branch */
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Branch Name
-              </label>
-              <div className="flex items-center">
-                <span className="text-gray-500 dark:text-gray-400 text-sm mr-1">
-                  feature/
-                </span>
-                <input
-                  type="text"
-                  value={newBranchName.replace(/^feature\//, "")}
-                  onChange={(e) =>
-                    setNewBranchName(
-                      e.target.value.startsWith("feature/")
-                        ? e.target.value
-                        : `feature/${e.target.value}`
-                    )
-                  }
-                  placeholder="my-feature"
-                  className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Full name: <code className="font-mono">{newBranchName}</code>
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Base Branch
-              </label>
-              <select
-                value={baseBranch}
-                onChange={(e) => setBaseBranch(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                {baseBranches.map((branch) => (
-                  <option key={branch.name} value={branch.name}>
-                    {branch.name}
-                    {protectedBranches.includes(branch.name) ? " (default)" : ""}
-                  </option>
+              {/* Protected branches */}
+              {availableBranches
+                .filter((b) => b.protected || protectedBranches.includes(b.name))
+                .map((branch) => (
+                  <div
+                    key={branch.name}
+                    className="flex items-center gap-3 p-3 rounded-xl border border-[#292524] opacity-40"
+                  >
+                    <div className="w-4 h-4 rounded-full border-2 border-[#3F3F46] flex-shrink-0" />
+                    <span className="flex-1 text-sm text-[#71717A] font-mono">{branch.name}</span>
+                    <span className="text-[10px] text-[#71717A] flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                      </svg>
+                      Protected
+                    </span>
+                  </div>
                 ))}
-              </select>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-[#A8A29E] mb-1.5">Branch Name</label>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-[#71717A] font-mono">feature/</span>
+                  <input
+                    type="text"
+                    value={newBranchName.replace(/^feature\//, "")}
+                    onChange={(e) =>
+                      setNewBranchName(
+                        e.target.value.startsWith("feature/") ? e.target.value : `feature/${e.target.value}`
+                      )
+                    }
+                    placeholder="my-feature"
+                    className="flex-1 px-3 py-2 bg-[#0C0A09] border border-[#292524] rounded-xl text-[#FAFAF9] text-sm font-mono placeholder-[#71717A] focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 transition-all"
+                  />
+                </div>
+                <p className="mt-1.5 text-[10px] text-[#71717A]">
+                  Full name: <code className="text-[#E8A87C]">{newBranchName}</code>
+                </p>
+              </div>
 
-        {/* Error Message */}
-        {error && (
-          <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
-        )}
+              <div>
+                <label className="block text-sm font-medium text-[#A8A29E] mb-1.5">Base Branch</label>
+                <select
+                  value={baseBranch}
+                  onChange={(e) => setBaseBranch(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#0C0A09] border border-[#292524] rounded-xl text-[#FAFAF9] text-sm focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 transition-all"
+                >
+                  {baseBranches.map((branch) => (
+                    <option key={branch.name} value={branch.name}>
+                      {branch.name}{protectedBranches.includes(branch.name) ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <p className="mt-3 text-xs text-red-400">{error}</p>
+          )}
+        </div>
 
         {/* Actions */}
-        <div className="flex gap-3 mt-6">
+        <div className="flex gap-3 px-6 pb-6">
           <button
             type="button"
             onClick={onCancel}
-            disabled={isLoading}
-            className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+            disabled={isLoading || submitting}
+            className="flex-1 px-4 py-2.5 text-sm font-medium text-[#A8A29E] bg-[#292524] border border-[#3F3F46] rounded-xl hover:bg-[#3F3F46] hover:text-[#FAFAF9] transition-all disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isLoading || (mode === "select" && selectableBranches.length === 0)}
-            className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            disabled={isLoading || submitting || (mode === "select" && selectableBranches.length === 0)}
+            className="flex-1 px-4 py-2.5 text-sm font-semibold bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {isLoading ? (
+            {(isLoading || submitting) ? (
               <>
-                <svg
-                  className="animate-spin h-4 w-4"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                Processing...
+                <span className="w-4 h-4 border-2 border-[#0C0A09] border-t-transparent rounded-full animate-spin" />
+                {mode === "create" ? "Creating..." : "Selecting..."}
               </>
             ) : mode === "select" ? (
               "Select Branch"

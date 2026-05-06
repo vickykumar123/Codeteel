@@ -43,3 +43,7 @@ next-env.d.ts
 supabase/migrations
 scripts/
 supabase/.temp
+# serverless / lambda
+.serverless/
+dist/lambda/
+.esbuild/

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/db/client";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { RepoList } from "./repo-list";
+import { AppNavbar } from "../../components/app-navbar";
 
 export default async function ConnectRepoPage() {
   const user = await requireAuth();
@@ -10,16 +11,14 @@ export default async function ConnectRepoPage() {
   const adminClient = createAdminClient();
   const { data: profile } = await adminClient
     .from("users")
-    .select("github_access_token")
+    .select("github_access_token, email")
     .eq("id", user.id)
     .single();
 
-  // If no GitHub token, redirect to connect
   if (!profile?.github_access_token) {
     redirect("/api/github/auth");
   }
 
-  // Fetch repos from GitHub
   const reposResponse = await fetch(
     "https://api.github.com/user/repos?per_page=100&sort=updated",
     {
@@ -27,12 +26,11 @@ export default async function ConnectRepoPage() {
         Authorization: `Bearer ${profile.github_access_token}`,
         Accept: "application/vnd.github.v3+json",
       },
-      next: { revalidate: 60 }, // Cache for 1 minute
+      next: { revalidate: 60 },
     }
   );
 
   if (!reposResponse.ok) {
-    // Token might be invalid, clear it
     if (reposResponse.status === 401) {
       await adminClient
         .from("users")
@@ -45,7 +43,6 @@ export default async function ConnectRepoPage() {
 
   const repos = await reposResponse.json();
 
-  // Get already connected repos
   const { data: connectedRepos } = await adminClient
     .from("repositories")
     .select("github_id")
@@ -54,30 +51,26 @@ export default async function ConnectRepoPage() {
   const connectedIds = new Set(connectedRepos?.map((r) => r.github_id) || []);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <header className="bg-white dark:bg-gray-800 shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            Connect Repository
-          </h1>
-          <Link
-            href="/dashboard"
-            className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900"
-          >
-            ← Back to Dashboard
-          </Link>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#0C0A09]">
+      <AppNavbar email={profile.email} activePage="dashboard" />
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-              Select Repositories
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Choose which repositories CodeBot should have access to
-            </p>
+      {/* Sub-header */}
+      <div className="border-b border-[#1C1917]">
+        <div className="max-w-4xl mx-auto px-5 sm:px-6 py-4 flex items-center justify-between">
+          <div>
+            <Link href="/dashboard" className="text-xs text-[#44403C] hover:text-[#A8A29E] transition-colors">
+              ← Dashboard
+            </Link>
+            <h1 className="text-lg font-semibold text-[#FAFAF9] mt-0.5">Add Repository</h1>
+          </div>
+        </div>
+      </div>
+
+      <main className="max-w-4xl mx-auto px-5 sm:px-6 py-8">
+        <div className="bg-[#1C1917] border border-[#292524] rounded-2xl overflow-hidden">
+          <div className="px-6 py-5 border-b border-[#292524]">
+            <h2 className="text-base font-semibold text-[#FAFAF9]">Select Repositories</h2>
+            <p className="text-sm text-[#A8A29E] mt-1">Choose which repositories Codeteel should have access to</p>
           </div>
 
           <RepoList

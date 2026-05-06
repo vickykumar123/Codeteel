@@ -154,14 +154,29 @@ export function useIndexer(options: UseIndexerOptions) {
         cancelRef,
       });
 
+      // Determine final status
+      let finalStatus: IndexerStatus;
+      if (cancelRef.current) {
+        finalStatus = "paused";
+      } else if (result.failedFiles > 0) {
+        finalStatus = "failed";
+      } else {
+        finalStatus = "completed";
+      }
+
+      const errorMsg = result.failedPaths.length > 0
+        ? `Failed on: ${result.failedPaths[0].path} — ${result.failedPaths[0].error}`
+        : null;
+
       setState((prev) => ({
         ...prev,
-        status: cancelRef.current ? "paused" : result.failedFiles === result.totalFiles ? "failed" : "completed",
+        status: finalStatus,
         progress: null,
         result,
-        existingJobId: cancelRef.current ? jobId : null,
-        existingProcessed: cancelRef.current ? result.processedFiles : 0,
-        existingTotal: cancelRef.current ? result.totalFiles : 0,
+        error: errorMsg,
+        existingJobId: finalStatus === "paused" || finalStatus === "failed" ? jobId : null,
+        existingProcessed: result.processedFiles,
+        existingTotal: result.totalFiles,
       }));
     } catch (err) {
       setState((prev) => ({
@@ -174,10 +189,17 @@ export function useIndexer(options: UseIndexerOptions) {
     }
   }, [repoId, defaultBranch, llmConfig]);
 
-  // Cancel (pause) indexing
+  // Cancel (pause) indexing — shows loader until batch finishes
+  const [cancelling, setCancelling] = useState(false);
   const cancel = useCallback(() => {
     cancelRef.current = true;
+    setCancelling(true);
   }, []);
+
+  // Reset cancelling flag when status changes away from indexing
+  useEffect(() => {
+    if (state.status !== "indexing") setCancelling(false);
+  }, [state.status]);
 
   // Resume from where we left off
   const resume = useCallback(() => {
@@ -191,6 +213,7 @@ export function useIndexer(options: UseIndexerOptions) {
 
   return {
     ...state,
+    cancelling,
     start: () => start(false),
     startFresh,
     cancel,

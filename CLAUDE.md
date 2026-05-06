@@ -2,125 +2,200 @@
 
 # CodeBot - Project Context
 
-## What is CodeBot?
-AI coding agent that:
+## What is Codeteel?
+AI coding agent platform that:
 1. Connects to GitHub repositories
-2. Indexes codebase (code + AI summaries)
-3. Receives requests via Slack/Telegram/Web
-4. Shows implementation plan for approval
+2. Indexes codebase (code + AI summaries + embeddings)
+3. Receives requests via **Web UI, Slack, Telegram, Discord**
+4. Shows implementation plan for approval (buttons or text)
 5. Creates branches, writes code, opens PRs
+6. Reviews PRs, issues, and runs security scans
 
 ## Tech Stack
 - **Framework**: Next.js 14 (App Router)
 - **Database**: Supabase (PostgreSQL + pgvector + pg_trgm)
 - **Auth**: Supabase Auth (email/password + magic link)
-- **LLM**: Ollama (local) or OpenAI (cloud)
+- **LLM**: Multi-provider — Ollama (local), OpenAI, Claude, Gemini, Grok, Qwen, Fireworks, Together
 - **Realtime**: Supabase Realtime (WebSocket for progress updates)
-- **Queue**: Supabase pgmq + pg_cron
+- **Queue**: AWS SQS (platform messages) — browser-side indexing (no pgmq/pg_cron)
+- **Compute**: AWS Lambda (platform message processing)
+- **Deployment**: Vercel (web + webhooks) + Serverless Framework (Lambda)
+- **Encryption**: AES-256-GCM for API keys and bot tokens
 - **Styling**: TailwindCSS
 
 ## Project Structure
 ```
 src/
 ├── app/
-│   ├── page.tsx              # Landing page (redirects if logged in)
-│   ├── login/page.tsx        # Login (client component)
-│   ├── signup/page.tsx       # Signup (client component)
-│   ├── dashboard/page.tsx    # Main dashboard (server component)
-│   ├── settings/
-│   │   ├── page.tsx          # Settings page (server component)
-│   │   └── llm-settings.tsx  # LLM config form (client component)
+│   ├── page.tsx                    # Landing page (redirects if logged in)
+│   ├── login/page.tsx              # Login (client component)
+│   ├── signup/page.tsx             # Signup (client component)
+│   ├── dashboard/page.tsx          # Main dashboard (server component)
+│   ├── settings/page.tsx           # Settings page (server + client components)
+│   ├── guides/
+│   │   ├── slack/page.tsx          # Slack integration guide
+│   │   ├── telegram/page.tsx       # Telegram integration guide
+│   │   └── discord/page.tsx        # Discord integration guide
 │   ├── repos/
 │   │   ├── [id]/
-│   │   │   ├── page.tsx          # Repo detail (server component)
-│   │   │   ├── index-button.tsx  # Index trigger + realtime progress
-│   │   │   ├── file-list.tsx     # Indexed files display
+│   │   │   ├── page.tsx            # Repo detail (server component)
+│   │   │   ├── index-button.tsx    # Index trigger + realtime progress
+│   │   │   ├── file-list.tsx       # Indexed files display
 │   │   │   └── chat/
 │   │   │       ├── page.tsx              # New chat (server component)
 │   │   │       ├── [chatId]/page.tsx     # Existing chat (server component)
 │   │   │       ├── chat-interface.tsx    # Main chat UI (client component)
 │   │   │       ├── message-list.tsx      # Messages with markdown
-│   │   │       ├── chat-input.tsx        # Input area
+│   │   │       ├── chat-input.tsx        # Input + slash command autocomplete
 │   │   │       ├── sidebar.tsx           # Conversation list
 │   │   │       ├── plan-approval.tsx     # Plan review UI
-│   │   │       ├── task-progress.tsx     # Execution task list (TODO)
-│   │   │       └── branch-modal.tsx      # Branch selection (TODO)
+│   │   │       ├── task-progress.tsx     # Execution progress display
+│   │   │       └── branch-modal.tsx      # Branch selection modal
 │   │   └── connect/
-│   │       ├── page.tsx      # Repo selection (server component)
-│   │       └── repo-list.tsx # Repo list (client component)
+│   │       ├── page.tsx            # Repo selection (server component)
+│   │       └── repo-list.tsx       # Repo list (client component)
 │   ├── api/
 │   │   ├── github/
-│   │   │   ├── auth/route.ts     # Initiate GitHub OAuth
-│   │   │   └── callback/route.ts # GitHub OAuth callback
+│   │   │   ├── auth/route.ts       # Initiate GitHub OAuth
+│   │   │   └── callback/route.ts   # GitHub OAuth callback
 │   │   ├── repos/
-│   │   │   ├── route.ts              # GET/POST/DELETE repos
-│   │   │   ├── [id]/
-│   │   │   │   ├── index/route.ts    # Queue files for indexing
-│   │   │   │   ├── search/route.ts   # Proxy: vector/text search
-│   │   │   │   ├── files/route.ts    # Proxy: read/write GitHub files (NEW)
-│   │   │   │   ├── branches/route.ts # Proxy: list/create branches (NEW)
-│   │   │   │   └── pr/route.ts       # Proxy: create pull request (NEW)
-│   │   ├── conversations/
-│   │   │   ├── route.ts              # POST create, GET list (NEW)
+│   │   │   ├── route.ts            # GET/POST/DELETE repos
 │   │   │   └── [id]/
-│   │   │       └── messages/route.ts # GET/POST messages (NEW)
-│   │   ├── process-index-batch/route.ts # Process batch from queue
+│   │   │       ├── index/          # Browser indexing endpoints (start, save-file, pause, complete, fail-file)
+│   │   │       ├── search/route.ts # Proxy: vector/text/grep search
+│   │   │       ├── files/route.ts  # Proxy: read/write GitHub files
+│   │   │       ├── branches/route.ts # Proxy: list/create branches
+│   │   │       ├── pr/route.ts     # Proxy: create PR, list PRs, get PR diff
+│   │   │       ├── issues/route.ts # Proxy: list/get GitHub issues
+│   │   │       ├── commit/route.ts # Batch commit via Git Trees API
+│   │   │       └── platform/route.ts # Disconnect platform from repo
+│   │   ├── conversations/
+│   │   │   ├── route.ts            # POST create, GET list
+│   │   │   └── [id]/
+│   │   │       ├── route.ts        # GET/PATCH conversation
+│   │   │       ├── messages/route.ts # GET/POST messages
+│   │   │       └── summary/route.ts  # GET/PUT chat summary (compression)
+│   │   ├── slack/
+│   │   │   ├── oauth/route.ts      # Slack OAuth with signed state
+│   │   │   ├── events/route.ts     # Slack events → SQS
+│   │   │   ├── command/route.ts    # /codeteel slash commands
+│   │   │   └── interactive/route.ts # Button clicks → SQS
+│   │   ├── telegram/
+│   │   │   └── webhook/route.ts    # Telegram updates → SQS
+│   │   ├── discord/
+│   │   │   ├── interactions/route.ts # Discord slash commands + buttons
+│   │   │   └── oauth/route.ts      # Discord bot OAuth
+│   │   ├── platform/
+│   │   │   └── connect/route.ts    # Generate one-time tokens (Telegram/Discord)
+│   │   ├── webhooks/
+│   │   │   └── github/route.ts     # GitHub push/PR merge → change detection
 │   │   ├── llm/
-│   │   │   └── chat/route.ts     # LLM proxy (keeps API keys server-side)
-│   │   ├── settings/route.ts     # GET/POST user settings
-│   │   └── ollama/models/route.ts # Fetch Ollama models
+│   │   │   └── chat/route.ts       # LLM proxy with SSE streaming
+│   │   ├── instructions/route.ts   # Custom instructions (user + repo level)
+│   │   ├── web/route.ts            # Web search + fetch for agents
+│   │   ├── settings/route.ts       # GET/POST user settings
+│   │   └── ollama/models/route.ts  # Fetch Ollama models
 │   └── auth/
-│       ├── callback/route.ts # OAuth/magic link callback
-│       └── signout/route.ts  # Sign out handler
+│       ├── callback/route.ts       # OAuth/magic link callback
+│       └── signout/route.ts        # Sign out handler
 ├── lib/
-│   ├── auth/index.ts         # getCurrentUser, requireAuth
+│   ├── auth/index.ts               # getCurrentUser, requireAuth
+│   ├── crypto.ts                   # AES-256-GCM encrypt/decrypt (API keys, bot tokens)
 │   ├── db/
-│   │   ├── client.ts         # Browser client (singleton) + admin client
-│   │   └── server.ts         # Server client (uses cookies)
-│   ├── llm/index.ts          # Ollama & OpenAI chat client (uses OpenAI SDK)
-│   ├── embeddings/index.ts   # Multi-provider embedding client (1536 dims)
-│   ├── github/index.ts       # GitHub API utilities
+│   │   ├── client.ts               # Browser client (singleton) + admin client
+│   │   └── server.ts               # Server client (uses cookies)
+│   ├── llm/index.ts                # Multi-provider LLM client + createChatFn()
+│   ├── embeddings/index.ts         # Multi-provider embedding client (1536 dims)
+│   ├── github/index.ts             # GitHub API utilities + file filtering
+│   ├── web/index.ts                # webSearch() + webFetch()
+│   ├── platforms/
+│   │   ├── handler.ts              # Shared pipeline: resolveContext → orchestrator → save
+│   │   ├── interface.ts            # PlatformAdapter interface + splitMessage()
+│   │   ├── queue.ts                # SQS push helper
+│   │   ├── slack/
+│   │   │   ├── adapter.ts          # Block Kit messages, buttons
+│   │   │   └── handler.ts          # Slack-specific routing
+│   │   ├── telegram/
+│   │   │   ├── adapter.ts          # Inline keyboards, Markdown
+│   │   │   └── handler.ts          # /start TOKEN, bot commands
+│   │   └── discord/
+│   │       ├── adapter.ts          # Embeds, action rows
+│   │       └── handler.ts          # Slash commands, interactions
 │   └── agents/
-│       ├── index.ts          # Exports orchestrator, executor
-│       ├── types.ts          # Tool, Message, Plan, StreamEvent types
-│       ├── orchestrator.ts   # Main ReAct loop (pure module, runs in browser or Node.js)
-│       ├── search.ts         # Search tools
-│       ├── planner.ts        # Planner tools (generates old_string/new_string)
-│       ├── executor.ts       # Executor (deterministic edits via applyEdit)
-│       ├── edit-utils.ts     # File editing (findAllMatches, applyEdit, findCloseMatch)
+│       ├── index.ts                # Exports orchestrator, executor
+│       ├── types.ts                # Tool, Message, Plan, StreamEvent, SearchJournalEntry
+│       ├── constants.ts            # Iteration limits, phrases, provider defaults
+│       ├── orchestrator.ts         # Main ReAct loop + tool call recovery
+│       ├── search.ts               # Semantic/text/grep search + search journal
+│       ├── planner.ts              # Plan generation with search budget
+│       ├── executor.ts             # Deterministic edits via applyEdit
+│       ├── edit-utils.ts           # findAllMatches, applyEdit, findCloseMatch
+│       ├── reviewer.ts             # PR review, issue review, security scan
+│       ├── compression.ts          # Chat compression (100k token threshold)
 │       └── tools/
-│           ├── interface.ts  # ToolExecutor interface (swappable)
-│           ├── web.ts        # Web impl: fetch() → /api/* (browser + test scripts)
-│           └── server.ts     # Server impl: direct DB/GitHub (Slack/Telegram)
+│           ├── interface.ts        # ToolExecutor interface (swappable)
+│           ├── web.ts              # Web impl: fetch() → /api/* (browser + tests)
+│           └── server.ts           # Server impl: direct DB/GitHub (platforms + Lambda)
+├── lambda/
+│   └── handler.ts                  # SQS event handler for platform messages
 ├── hooks/
-│   └── useOrchestrator.ts    # React wrapper (state, UI events, background DB saves)
-├── middleware.ts             # Route protection
+│   ├── useOrchestrator.ts          # React wrapper + slash commands + DB persistence
+│   └── useIndexer.ts               # Browser-side indexing orchestration
+├── middleware.ts                   # Route protection + auth session refresh
 └── types/
-    └── database.ts           # Auto-generated Supabase types
+    └── database.ts                 # Auto-generated Supabase types
+
+scripts/
+├── build-lambda.js                 # esbuild with @/lib alias resolution
+├── test-comprehensive.ts           # 16 web E2E tests
+├── test-commands.ts                # 21 slash command tests
+├── test-slack.ts                   # 15 Slack E2E tests
+├── test-telegram.ts                # 16 Telegram E2E tests
+├── test-discord.ts                 # 15 Discord E2E tests
+├── test-security-scan.ts           # 4 security scan tests
+└── test-compression.ts             # Compression unit tests
+
+serverless.yml                      # Lambda + SQS config (ap-south-1)
 ```
 
 ## Database Schema (Supabase)
 ```
-users           - Profile + LLM settings + embedding settings (auto-created on signup via trigger)
-repositories    - Connected GitHub repos + index_status
-file_summaries  - Code + AI summary + embeddings (trigram + vector search, 1536 dims)
-index_jobs      - Track indexing progress (batches, processed_files, status)
-tasks           - User requests, plans, execution status
-conversations   - Chat conversations with working_branch for edits
-messages        - Chat messages (user, assistant, tool, system)
-messaging_connections - Slack/Telegram tokens per user
+users                - Profile + LLM settings + embedding settings (auto-created on signup via trigger)
+repositories         - Connected GitHub repos + index_status + indexed_commit_sha + pending_changes
+file_summaries       - Code + AI summary + embeddings (trigram + vector search, 1536 dims)
+index_jobs           - Indexing progress (file_list, completed_paths[], failed_paths[], status)
+conversations        - Chat conversations (working_branch, execution_state JSONB, platform metadata)
+messages             - Chat messages (user, assistant, tool, system) with metadata JSONB
+chat_summaries       - Conversation compression summaries (last_message_id, tokens_compressed)
+platform_connections - Platform channel → repo mapping (one channel = one repo)
+slack_installations  - Slack workspace OAuth tokens (encrypted bot_token, team_id, bot_user_id)
+platform_llm_providers - Cloud LLM providers for platforms (one active per user, encrypted api_key)
+custom_instructions  - User-level and repo-level instructions (merged into agent prompt)
 ```
 
 ## Migrations
-- `000_full_schema.sql` - Core tables, triggers, extensions
+- `000_full_schema.sql` - Core tables, triggers, extensions (pgvector, pg_trgm)
 - `001_indexing_queue.sql` - pgmq queue, pg_cron job, queue functions
 - `002_realtime_policies.sql` - RLS policies for Realtime subscriptions
-- `003_embedding_settings.sql` - Embedding provider settings, updated queue functions
+- `003_embedding_settings.sql` - Embedding provider settings
 - `004_conversations.sql` - Conversations, messages tables, search functions
-- `005_branch_management.sql` - Add working_branch to conversations (TODO)
+- `005_branch_management.sql` - working_branch column on conversations
+- `006_execution_state.sql` - execution_state JSONB on conversations
+- `007_llm_providers.sql` - LLM provider settings on users
+- `008_browser_indexing.sql` - Browser-side indexing (file_list, completed/failed paths)
+- `009_change_detection.sql` - indexed_commit_sha, pending_changes, webhook tracking
+- `010_chat_summaries.sql` - Chat compression table + RLS
+- `011_llm_providers_update.sql` - Multi-provider LLM settings
+- `012_custom_instructions.sql` - User + repo level custom instructions
+- `013_platform_llm_providers.sql` - Separate cloud LLM for platforms
+- `014_platform_connections.sql` - Platform channel → repo mapping
+- `015_slack_installations.sql` - Slack OAuth tokens (encrypted)
+- `017_conversation_processing_lock.sql` - is_processing column + stale lock detection
+- `018_telegram_connect_tokens.sql` - One-time tokens for Telegram/Discord connect
 
 ## Environment Variables (.env)
 ```
+# Supabase
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
@@ -129,6 +204,25 @@ NEXT_PUBLIC_APP_URL=http://localhost:9999
 # GitHub OAuth App (NOT GitHub App!)
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
+
+# Encryption (generate with: openssl rand -hex 32)
+ENCRYPTION_KEY=           # 32-byte hex for AES-256-GCM (API keys, bot tokens)
+
+# Slack
+SLACK_CLIENT_ID=
+SLACK_CLIENT_SECRET=
+SLACK_SIGNING_SECRET=
+
+# Telegram
+TELEGRAM_BOT_TOKEN=
+
+# Discord
+DISCORD_APPLICATION_ID=
+DISCORD_PUBLIC_KEY=       # Ed25519 signature verification
+DISCORD_BOT_TOKEN=
+
+# AWS (for Lambda/SQS)
+SQS_QUEUE_URL=
 
 # Cron job authentication (generate with: openssl rand -hex 32)
 CRON_SECRET=
@@ -140,99 +234,124 @@ pnpm dev        # Start on port 9999
 pnpm db:types   # Generate types from Supabase
 ```
 
-## Completed
-- [x] Project setup
-- [x] Database schema + migrations
-- [x] Supabase types generated
-- [x] Auth (login/signup/middleware)
-- [x] Dashboard (basic)
-- [x] DB clients (browser singleton + server + admin)
-- [x] GitHub OAuth - Connect repositories
-- [x] Repository connection UI (/repos/connect)
-- [x] LLM Settings Page - Configure Ollama/OpenAI (/settings)
-- [x] Repository Indexing - Queue-based with streaming
-  - LLM client (src/lib/llm) - Ollama & OpenAI support
-  - GitHub API client (src/lib/github) - fetch repo tree & files
-  - Queue system (pgmq + pg_cron)
-  - Streaming endpoints (300s timeout safe for Vercel)
-  - Batch processing (25 files per batch)
-- [x] Realtime progress updates (Supabase Realtime WebSocket)
-- [x] RLS policies for Realtime subscriptions
-- [x] Embedding generation during indexing
-  - Multi-provider support (OpenAI, Gemini, Mistral, Voyage, Cohere)
-  - All providers output 1536 dimensions
-  - Embedding client library (src/lib/embeddings)
-  - Settings UI for embedding provider configuration
-- [x] Large file chunking for summaries
-  - Chunk by lines (500) or chars (6000) with overlap
-  - Summarize each chunk, combine with LLM
-  - Thresholds: > 2000 lines OR > 8000 chars
-- [x] Parallel file processing
-  - Ollama: 2 concurrent files (rate limit safe)
-  - OpenAI: 10 concurrent files
-- [x] Comprehensive file filtering
-  - Skip: lock files, build dirs, assets, minified, generated
-  - Index: code files, infra configs, documentation
-- [x] Web Chat Interface
-  - Full-page chat UI with sidebar
-  - Markdown rendering in messages
-  - Conversation history and switching
-  - URL structure: /repos/[id]/chat/[chatId]
-- [x] Hierarchical Agent System
-  - Orchestrator agent (coordinates sub-agents)
-  - Search agent (semantic + text search)
-  - Planner agent (creates implementation plans)
-  - Executor agent (GitHub API: branch, write, PR)
-  - Plan approval flow with UI
+## Features
 
-## Next Steps (TODO)
-1. ~~**Web Chat Interface**~~ - ✅ Chat with indexed codebase (completed)
-2. ~~**Hierarchical Agent System**~~ - ✅ Orchestrator + Search + Planner + Executor (completed)
-3. ~~**Branch Management**~~ - ✅ Branch selection/creation before edits (completed)
-   - [x] Add `working_branch` column to conversations table
-   - [x] Branch API endpoints (GET /branches, POST /branches)
-   - [x] Branch selector UI component (Web)
-   - [x] `request_branch_selection` tool for agent
-   - [x] `branch_selection_required` stream event
-   - [ ] Platform handlers (Slack text, Telegram buttons) - deferred to integration phase
-4. ~~**File Editing (Custom Implementation)**~~ - ✅ Deterministic edit logic (completed)
-   - [x] Create `src/lib/agents/edit-utils.ts` with edit algorithm
-   - [x] Add `edit_file` tool to executor tools
-   - [x] Implement `findAllMatches()` for exact string matching
-   - [x] Implement `applyEdit()` with uniqueness validation
-   - [x] Implement `findCloseMatch()` for whitespace hints
-   - [x] Add actionable error messages for LLM self-correction
-   - [x] Integrate with GitHub Contents API for commits
-   **Note:** PlanStep is TEXT only (description). old_string/new_string generated at
-   execution time by LLM per step. applyEdit() applies deterministically.
-5. **Move Orchestrator to Frontend** - Client-side agent loop
-   - [ ] Create `ToolExecutor` interface (`src/lib/agents/tools/interface.ts`)
-   - [ ] Create `WebToolExecutor` (`src/lib/agents/tools/web.ts`) - fetch() → /api/*
-   - [ ] Create thin API routes:
-     - [ ] `POST /api/repos/[id]/search` - vector/text search proxy
-     - [ ] `GET /api/repos/[id]/files/[...path]` - read file from GitHub
-     - [ ] `PUT /api/repos/[id]/files/[...path]` - write/edit file on GitHub
-     - [ ] `GET /api/repos/[id]/branches` - list branches
-     - [ ] `POST /api/repos/[id]/branches` - create branch
-     - [ ] `POST /api/repos/[id]/pr` - create pull request
-     - [ ] `POST /api/conversations` - create conversation
-     - [ ] `GET /api/conversations/[id]/messages` - load messages
-     - [ ] `POST /api/conversations/[id]/messages` - save message
-   - [ ] Refactor `orchestrator.ts` to accept `ToolExecutor` (pure module)
-   - [ ] Move LLM calls to browser fetch (Ollama/OpenAI directly)
-   - [ ] Create `useOrchestrator` React hook
-   - [ ] Add [Approve] / [Reject] buttons to plan display
-   - [ ] Add branch modal guard before execution
-   - [ ] Add conversation creation guard on first message
-   - [ ] Background DB saves (messages, execution state)
-   - [ ] Update test scripts to use same fetch-based pattern
-6. **Task Tracking (Todo List)** - Track execution progress in UI
-   - [x] Add `ExecutionTask` interface to types.ts
-   - [ ] Convert plan.steps → tasks at execution start (in React state)
-   - [ ] Show task progress UI during execution
-   - [ ] Update task status as steps complete/fail
-   **Note:** Plan steps ARE the tasks. No separate storage - just React state during execution.
-7. **Slack/Telegram Integration** - Messaging bots (uses ServerToolExecutor)
+### Core Agent System
+- **Orchestrator** — Main ReAct loop with tool call recovery for OSS models
+- **Search Agent** — Semantic (vector), text (trigram), grep search with search journal (max 7 entries, avoids re-searching)
+- **Planner Agent** — Text-only plans (WHAT), code generated per step at execution time (HOW). Max 10 iterations, search budget guidance
+- **Executor Agent** — Deterministic edits via applyEdit(). Reads fresh file from GitHub before each step. Max 3 retries per edit
+- **Reviewer Agent** — PR review, issue review, security scan (summary-based file prioritization)
+- **Compression** — Auto-compresses at 100k tokens (60% of messages). Manual via `/compact` (threshold=0)
+- **Tool Call Recovery** — OSS models sometimes output JSON as text. Recovers: request→planner, question→search, paths→delete_files, title+body→create_pr
+- **Error Nudge** — After 2 consecutive errors, appends nudge to tool result. One nudge per result (error OR reflect, never both)
+
+### Web UI
+- **Chat Interface** — Full-page chat with sidebar, markdown rendering, conversation history
+- **Slash Commands** — `/help`, `/branch`, `/branches`, `/reset`, `/clear`, `/security`, `/review`, `/compact`, `/pr`, `/diff`, `/undo`
+- **Command Autocomplete** — Popup suggestions as user types `/`, arrow key navigation, Tab/Enter to select
+- **Plan Approval** — UI buttons (100% reliable) + text detection ("yes", "go ahead", etc.) + LLM fallback
+- **Branch Modal** — Branch selector guard before execution (not before planning)
+- **Execution Progress** — Step-by-step progress with diffs shown after each step
+- **Persistent Commands** — `/security`, `/review`, `/compact`, `/diff`, `/reset` save to DB. Ephemeral: `/help`, `/branches`, `/branch`, `/clear`
+- **Auto-create Conversation** — Persistent commands as first message auto-create the chat
+
+### Platform Integrations
+
+**Architecture:** Vercel (web + webhooks) → SQS → Lambda (orchestrator processing) → Platform APIs
+
+#### Slack
+- **OAuth** with signed state parameter (HMAC-SHA256, cross-domain safe)
+- **Commands**: `/codeteel connect`, `disconnect`, `status`, `branch`, `branches`, `reset`, `clear`, `security`, `help`
+- **Block Kit** buttons for plan approval and branch selection
+- **Request signature verification** (HMAC-SHA256, timing check)
+- Auto-join bot to channel on connect. One channel = one repo
+- Message splitting at 4000 chars
+
+#### Telegram
+- **Token-based connect** — Click link from repo page → `/start TOKEN` in Telegram
+- **Commands**: `/connect`, `/disconnect`, `/status`, `/branch`, `/branches`, `/reset`, `/clear`, `/security`, `/help`
+- **Inline keyboard** buttons for approval/branch selection
+- Markdown formatting with plain-text fallback on parse errors
+- Message splitting at 4096 chars. Typing indicator via sendChatAction
+
+#### Discord
+- **Slash commands only** — Discord doesn't support regular messages to bots
+- **`/ask`** command for all messages/questions
+- **Commands**: `/connect`, `/disconnect`, `/status`, `/branch`, `/branches`, `/reset`, `/clear`, `/security`, `/help`
+- **Ed25519 signature verification** via tweetnacl
+- Discord embeds + action row buttons. Message splitting at 2000 chars
+- Guild-scoped command registration (instant, not 1hr global delay)
+
+#### Shared Platform Handler (`src/lib/platforms/handler.ts`)
+- Single pipeline for all platforms: resolveContext → getLLMConfig → check processing lock → load history → run orchestrator → save state
+- Stale lock detection (5-minute timeout for Lambda crash recovery)
+- Bot token NOT in SQS messages — Lambda looks up from DB using teamId
+- `splitMessage()` utility for platform character limits
+
+### Security & Encryption
+- **AES-256-GCM** encryption for API keys, bot tokens, OAuth tokens (`src/lib/crypto.ts`)
+- Format: `aes256gcm:<iv_hex>:<ciphertext_hex>:<tag_hex>`
+- **Slack request signing** — HMAC-SHA256 with timing check (rejects > 300s old)
+- **Discord Ed25519** — tweetnacl detached signature verification
+- **Slack OAuth state signing** — HMAC-SHA256 prevents CSRF without cookies
+- **One-time connect tokens** — 5-minute expiry for Telegram/Discord linking
+- **Security scan agent** — Regex summaries for keywords, only reads full code for flagged/sensitive files
+- **Processing lock** — `is_processing` column prevents concurrent execution per conversation
+
+### LLM Providers
+- **Web**: Ollama (local, direct browser fetch) or cloud (OpenAI, Claude, Gemini, Grok, Qwen, Fireworks, Together) via SSE proxy
+- **Platforms**: Cloud-only (separate config, Lambda can't reach user's localhost)
+- Provider defaults in `constants.ts` with OpenAI-compatible base URLs
+- SSE streaming keeps Vercel connection alive past 15s timeout
+
+### Custom Instructions
+- **User-level** — applies to all repos for the user
+- **Repo-level** — applies to specific repository
+- Merged into agent system prompt. Validated during code review
+
+### Indexing
+- **Browser-side** — No server queue. Browser orchestrates file-by-file with pause/resume
+- **Parallel processing** — Ollama: 2 concurrent, OpenAI: 10 concurrent
+- **Large file chunking** — >2000 lines or >8000 chars → chunk by 500 lines / 6000 chars with overlap
+- **Multi-provider embeddings** — OpenAI, Gemini, Mistral, Voyage, Cohere (all 1536 dims)
+- **File filtering** — 30+ languages indexed. Excludes: lock files, build dirs, assets, minified, >100KB
+- **Content hash tracking** — Skip unchanged files on re-index
+- **Change detection** — GitHub webhooks track push/PR merge → pending_changes for re-indexing
+
+### Search
+- **Semantic search** — pgvector cosine similarity on 1536-dim embeddings
+- **Text search** — pg_trgm trigram matching
+- **Grep search** — Regex patterns with context lines, file pattern filtering
+- **Web search & fetch** — Agents can search the web and fetch URLs for external documentation
+
+### Branch Management
+- Main/master protected (cannot be selected for edits)
+- Branch required before execution, NOT before planning
+- Stored in conversation (persists across page refresh)
+- Web: modal dialog. Platforms: buttons + text commands
+
+### Batch Commits
+- Git Trees API for multi-file changes in single commit
+- Supports create + modify + delete in one atomic operation
+- No race conditions (tree-based, not contents API)
+
+### Iteration Limits & Safety
+- Orchestrator: 20 iterations max
+- Planner: 10 iterations max
+- Same action 3x = stuck → surface error
+- Small file threshold: <20 lines → full-file replacement
+- Max grep matches: 20. Max search results: 20
+- Tool result truncation at 8000 chars (search token optimization)
+
+### Test Suites
+- **Web comprehensive**: 16 tests (88-100% pass rate)
+- **Slash commands**: 21 tests (100% pass rate)
+- **Slack**: 15 tests (93% pass rate)
+- **Telegram**: 16 tests (93% pass rate)
+- **Discord**: 15 tests (86% pass rate)
+- **Security scan**: 4 tests
+- All tests use real LLM calls + real GitHub API (not mocked)
 
 ## Architecture: Client-Side Orchestrator
 

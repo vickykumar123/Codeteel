@@ -17,6 +17,7 @@ interface LLMProviderConfig {
 
 interface LLMSettingsProps {
   initialProviders: LLMProviderConfig[];
+  initialPlatformProviders: LLMProviderConfig[];
   initialEmbeddingProvider: string;
   initialEmbeddingApiKey: string;
   initialEmbeddingModel: string;
@@ -55,8 +56,12 @@ const EMBEDDING_PROVIDERS = [
 // COMPONENT
 // ===========================================
 
+// Cloud-only providers (no Ollama) for platform use
+const PLATFORM_PROVIDERS = LLM_PROVIDERS.filter(p => p.id !== "ollama");
+
 export function LLMSettings({
   initialProviders,
+  initialPlatformProviders,
   initialEmbeddingProvider,
   initialEmbeddingApiKey,
   initialEmbeddingModel,
@@ -66,6 +71,12 @@ export function LLMSettings({
   const [editingProvider, setEditingProvider] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<LLMProviderConfig>({ provider: "", api_key: "", base_url: "", model: "", is_active: false });
   const [addingNew, setAddingNew] = useState(false);
+
+  // Platform providers state
+  const [platformProviders, setPlatformProviders] = useState<LLMProviderConfig[]>(initialPlatformProviders);
+  const [editingPlatformProvider, setEditingPlatformProvider] = useState<string | null>(null);
+  const [platformEditForm, setPlatformEditForm] = useState<LLMProviderConfig>({ provider: "", api_key: "", base_url: "", model: "", is_active: false });
+  const [addingNewPlatform, setAddingNewPlatform] = useState(false);
 
   // Ollama-specific
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
@@ -136,7 +147,7 @@ export function LLMSettings({
       return;
     }
     const meta = LLM_PROVIDERS.find(p => p.id === editForm.provider);
-    if (meta?.needsKey && !editForm.api_key && !editForm.api_key?.includes("...")) {
+    if (meta?.needsKey && !editForm.api_key && !editForm.api_key?.startsWith("••")) {
       setMessage({ type: "error", text: "API key is required for this provider" });
       return;
     }
@@ -155,7 +166,7 @@ export function LLMSettings({
 
       // Update local state
       const existing = providers.findIndex(p => p.provider === editForm.provider);
-      const updated = { ...editForm, api_key: editForm.api_key.includes("...") ? editForm.api_key : (editForm.api_key ? editForm.api_key.slice(0, 7) + "..." : "") };
+      const updated = { ...editForm, api_key: editForm.api_key.startsWith("••") ? editForm.api_key : (editForm.api_key ? "••••••••••••" : "") };
       if (existing >= 0) {
         const newProviders = [...providers];
         newProviders[existing] = updated;
@@ -250,6 +261,113 @@ export function LLMSettings({
     }
   };
 
+  // Platform provider functions
+  const startAddPlatform = (providerId: string) => {
+    const meta = PLATFORM_PROVIDERS.find(p => p.id === providerId);
+    if (!meta) return;
+    setPlatformEditForm({
+      provider: providerId,
+      api_key: "",
+      base_url: meta.defaultUrl,
+      model: "",
+      is_active: platformProviders.length === 0,
+    });
+    setAddingNewPlatform(true);
+    setEditingPlatformProvider(providerId);
+  };
+
+  const startEditPlatform = (p: LLMProviderConfig) => {
+    setPlatformEditForm({ ...p });
+    setAddingNewPlatform(false);
+    setEditingPlatformProvider(p.provider);
+  };
+
+  const cancelEditPlatform = () => {
+    setEditingPlatformProvider(null);
+    setAddingNewPlatform(false);
+  };
+
+  const savePlatformProvider = async () => {
+    if (!platformEditForm.model) {
+      setMessage({ type: "error", text: "Model is required" });
+      return;
+    }
+    if (!platformEditForm.api_key || platformEditForm.api_key === "") {
+      setMessage({ type: "error", text: "API key is required for platform providers" });
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform_provider: platformEditForm }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to save");
+      }
+
+      const existing = platformProviders.findIndex(p => p.provider === platformEditForm.provider);
+      const updated = { ...platformEditForm, api_key: platformEditForm.api_key.startsWith("••") ? platformEditForm.api_key : (platformEditForm.api_key ? "••••••••••••" : "") };
+      if (existing >= 0) {
+        const newProviders = [...platformProviders];
+        newProviders[existing] = updated;
+        setPlatformProviders(newProviders);
+      } else {
+        setPlatformProviders([...platformProviders, updated]);
+      }
+
+      setEditingPlatformProvider(null);
+      setAddingNewPlatform(false);
+      setMessage({ type: "success", text: `Platform provider ${platformEditForm.provider} saved` });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed to save" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setActivePlatform = async (provider: string) => {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ set_active_platform_provider: { provider } }),
+      });
+      if (!response.ok) throw new Error("Failed to set active");
+
+      setPlatformProviders(platformProviders.map(p => ({ ...p, is_active: p.provider === provider })));
+      setMessage({ type: "success", text: `${provider} set as active platform provider` });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deletePlatformProvider = async (provider: string) => {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delete_platform_provider: { provider } }),
+      });
+      if (!response.ok) throw new Error("Failed to delete");
+
+      const remaining = platformProviders.filter(p => p.provider !== provider);
+      setPlatformProviders(remaining);
+      setMessage({ type: "success", text: `${provider} removed from platform providers` });
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const configuredIds = providers.map(p => p.provider);
   const availableToAdd = LLM_PROVIDERS.filter(p => !configuredIds.includes(p.id));
   const selectedEmbeddingProvider = EMBEDDING_PROVIDERS.find(p => p.id === embeddingProvider);
@@ -267,19 +385,19 @@ export function LLMSettings({
 
       {/* Configured Providers */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+        <label className="block text-sm font-medium text-[#A8A29E] mb-3">
           LLM Providers
         </label>
 
         {providers.length === 0 && !addingNew && (
-          <div className="text-sm text-gray-500 dark:text-gray-400 p-4 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg text-center">
+          <div className="text-sm text-[#A8A29E] p-4 border border-dashed border-[#3F3F46] rounded-lg text-center">
             No providers configured. Add one below.
           </div>
         )}
 
         <div className="space-y-3">
           {providers.map((p) => (
-            <div key={p.provider} className={`p-4 border-2 rounded-lg ${p.is_active ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-600"}`}>
+            <div key={p.provider} className={`p-4 border-2 rounded-lg ${p.is_active ? "border-[#E8A87C] bg-[#E8A87C]/10" : "border-gray-200 dark:border-gray-600"}`}>
               {editingProvider === p.provider && !addingNew ? (
                 // Edit form
                 <ProviderForm
@@ -298,26 +416,26 @@ export function LLMSettings({
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900 dark:text-white">
+                      <span className="font-medium text-[#FAFAF9]">
                         {LLM_PROVIDERS.find(m => m.id === p.provider)?.name || p.provider}
                       </span>
-                      {p.is_active && <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-2 py-0.5 rounded-full">Active</span>}
+                      {p.is_active && <span className="text-xs bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full">Active</span>}
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                      Model: <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded">{p.model}</code>
+                    <div className="text-sm text-[#A8A29E] mt-1">
+                      Model: <code className="bg-[#292524] px-1 rounded text-[#E8A87C]">{p.model}</code>
                       {p.api_key && <span className="ml-3">Key: {p.api_key}</span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {!p.is_active && (
-                      <button onClick={() => setActive(p.provider)} disabled={saving} className="text-xs px-3 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded hover:bg-blue-200 disabled:opacity-50">
+                      <button onClick={() => setActive(p.provider)} disabled={saving} className="text-xs px-3 py-1.5 bg-[#E8A87C]/10 text-[#E8A87C] border border-[#E8A87C]/20 rounded-lg hover:bg-[#E8A87C]/20 disabled:opacity-50 transition-all">
                         Set Active
                       </button>
                     )}
-                    <button onClick={() => startEdit(p)} className="text-xs px-3 py-1 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded hover:bg-gray-200">
+                    <button onClick={() => startEdit(p)} className="text-xs px-3 py-1.5 bg-[#292524] text-[#A8A29E] border border-[#3F3F46] rounded-lg hover:bg-[#3F3F46] hover:text-[#FAFAF9] transition-all">
                       Edit
                     </button>
-                    <button onClick={() => deleteProvider(p.provider)} disabled={saving} className="text-xs px-3 py-1 bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 rounded hover:bg-red-200 disabled:opacity-50">
+                    <button onClick={() => deleteProvider(p.provider)} disabled={saving} className="text-xs px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 disabled:opacity-50 transition-all">
                       Remove
                     </button>
                   </div>
@@ -328,8 +446,8 @@ export function LLMSettings({
 
           {/* Add new provider form */}
           {addingNew && editingProvider && (
-            <div className="p-4 border-2 border-green-300 dark:border-green-600 rounded-lg bg-green-50 dark:bg-green-900/10">
-              <div className="text-sm font-medium text-green-700 dark:text-green-400 mb-3">
+            <div className="p-4 border border-[#E8A87C]/30 rounded-2xl bg-[#E8A87C]/5">
+              <div className="text-sm font-medium text-[#E8A87C] mb-3">
                 Add {LLM_PROVIDERS.find(m => m.id === editForm.provider)?.name}
               </div>
               <ProviderForm
@@ -351,7 +469,7 @@ export function LLMSettings({
       {/* Add Provider Buttons */}
       {availableToAdd.length > 0 && !addingNew && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+          <label className="block text-sm font-medium text-[#A8A29E] mb-3">
             Add Provider
           </label>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -359,20 +477,120 @@ export function LLMSettings({
               <button
                 key={p.id}
                 onClick={() => startAdd(p.id)}
-                className="p-3 border border-gray-200 dark:border-gray-600 rounded-lg text-left hover:border-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors"
+                className="p-3 border border-[#292524] rounded-xl text-left hover:border-[#E8A87C]/30 hover:bg-[#E8A87C]/5 transition-all"
               >
-                <div className="font-medium text-gray-900 dark:text-white text-sm">{p.name}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">{p.description}</div>
+                <div className="font-medium text-[#FAFAF9] text-sm">{p.name}</div>
+                <div className="text-xs text-[#44403C]">{p.description}</div>
               </button>
             ))}
           </div>
         </div>
       )}
 
+      {/* Platform LLM Providers */}
+      <div id="platform-llm" className="pt-6 border-t border-[#292524] scroll-mt-24">
+        <h3 className="text-lg font-medium text-[#FAFAF9] mb-2">Platform LLM (Slack, Telegram, Discord)</h3>
+        <p className="text-sm text-[#A8A29E] mb-4">
+          Cloud providers only. Used when messages come from messaging platforms (server cannot reach local Ollama).
+        </p>
+
+        {platformProviders.length === 0 && !addingNewPlatform && (
+          <div className="text-sm text-[#A8A29E] p-4 border border-dashed border-[#3F3F46] rounded-lg text-center mb-4">
+            No platform provider configured. Add one to use Codeteel from Slack, Telegram, or Discord.
+          </div>
+        )}
+
+        <div className="space-y-3 mb-4">
+          {platformProviders.map((p) => (
+            <div key={p.provider} className={`p-4 border-2 rounded-lg ${p.is_active ? "border-purple-500 bg-purple-50 dark:bg-purple-900/20" : "border-gray-200 dark:border-gray-600"}`}>
+              {editingPlatformProvider === p.provider && !addingNewPlatform ? (
+                <ProviderForm
+                  form={platformEditForm}
+                  setForm={setPlatformEditForm}
+                  ollamaModels={[]}
+                  ollamaStatus="idle"
+                  fetchOllamaModels={() => {}}
+                  formatSize={formatSize}
+                  onSave={savePlatformProvider}
+                  onCancel={cancelEditPlatform}
+                  saving={saving}
+                />
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-[#FAFAF9]">
+                        {PLATFORM_PROVIDERS.find(m => m.id === p.provider)?.name || p.provider}
+                      </span>
+                      {p.is_active && <span className="text-xs bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full">Active</span>}
+                    </div>
+                    <div className="text-sm text-[#A8A29E] mt-1">
+                      Model: <code className="bg-[#292524] px-1 rounded text-[#E8A87C]">{p.model}</code>
+                      {p.api_key && <span className="ml-3">Key: {p.api_key}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!p.is_active && (
+                      <button onClick={() => setActivePlatform(p.provider)} disabled={saving} className="text-xs px-3 py-1.5 bg-[#E8A87C]/10 text-[#E8A87C] border border-[#E8A87C]/20 rounded-lg hover:bg-[#E8A87C]/20 disabled:opacity-50 transition-all">
+                        Set Active
+                      </button>
+                    )}
+                    <button onClick={() => startEditPlatform(p)} className="text-xs px-3 py-1.5 bg-[#292524] text-[#A8A29E] border border-[#3F3F46] rounded-lg hover:bg-[#3F3F46] hover:text-[#FAFAF9] transition-all">
+                      Edit
+                    </button>
+                    <button onClick={() => deletePlatformProvider(p.provider)} disabled={saving} className="text-xs px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 disabled:opacity-50 transition-all">
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {addingNewPlatform && editingPlatformProvider && (
+            <div className="p-4 border border-[#E8A87C]/30 rounded-2xl bg-[#E8A87C]/5">
+              <div className="text-sm font-medium text-[#E8A87C] mb-3">
+                Add {PLATFORM_PROVIDERS.find(m => m.id === platformEditForm.provider)?.name}
+              </div>
+              <ProviderForm
+                form={platformEditForm}
+                setForm={setPlatformEditForm}
+                ollamaModels={[]}
+                ollamaStatus="idle"
+                fetchOllamaModels={() => {}}
+                formatSize={formatSize}
+                onSave={savePlatformProvider}
+                onCancel={cancelEditPlatform}
+                saving={saving}
+              />
+            </div>
+          )}
+        </div>
+
+        {(() => {
+          const configuredPlatformIds = platformProviders.map(p => p.provider);
+          const availablePlatformToAdd = PLATFORM_PROVIDERS.filter(p => !configuredPlatformIds.includes(p.id));
+          return availablePlatformToAdd.length > 0 && !addingNewPlatform ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {availablePlatformToAdd.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => startAddPlatform(p.id)}
+                  className="p-3 border border-[#292524] rounded-xl text-left hover:border-[#E8A87C]/30 hover:bg-[#E8A87C]/5 transition-all"
+                >
+                  <div className="font-medium text-[#FAFAF9] text-sm">{p.name}</div>
+                  <div className="text-xs text-[#44403C]">{p.description}</div>
+                </button>
+              ))}
+            </div>
+          ) : null;
+        })()}
+      </div>
+
       {/* Embedding Settings */}
-      <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Embedding Provider</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+      <div id="embedding" className="pt-6 border-t border-[#292524] scroll-mt-24">
+        <h3 className="text-lg font-medium text-[#FAFAF9] mb-2">Embedding Provider</h3>
+        <p className="text-sm text-[#A8A29E] mb-4">
           Required for semantic code search. All providers output 1536 dimensions.
         </p>
 
@@ -382,17 +600,17 @@ export function LLMSettings({
               key={ep.id}
               type="button"
               onClick={() => { setEmbeddingProvider(ep.id); if (!embeddingModel) setEmbeddingModel(ep.defaultModel); }}
-              className={`p-3 border-2 rounded-lg text-left transition-colors ${embeddingProvider === ep.id ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-600 hover:border-gray-300"}`}
+              className={`p-3 border-2 rounded-lg text-left transition-colors ${embeddingProvider === ep.id ? "border-[#E8A87C] bg-[#E8A87C]/10" : "border-[#292524] hover:border-[#3F3F46]"}`}
             >
-              <div className="font-medium text-gray-900 dark:text-white text-sm">{ep.name}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">{ep.price}</div>
+              <div className="font-medium text-[#FAFAF9] text-sm">{ep.name}</div>
+              <div className="text-xs text-[#44403C]">{ep.price}</div>
             </button>
           ))}
         </div>
 
-        <div className="space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+        <div className="space-y-4 p-4 bg-[#0C0A09]/50 rounded-xl">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-[#A8A29E] mb-1.5">
               API Key <span className="text-red-500">*</span>
             </label>
             <input
@@ -400,23 +618,23 @@ export function LLMSettings({
               value={embeddingApiKey}
               onChange={(e) => setEmbeddingApiKey(e.target.value)}
               placeholder={`Enter your ${selectedEmbeddingProvider?.name || "embedding"} API key`}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2.5 bg-[#0C0A09] border border-[#292524] rounded-xl text-[#FAFAF9] placeholder-[#44403C] text-sm focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 transition-all"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Model (optional)</label>
+            <label className="block text-sm font-medium text-[#A8A29E] mb-1.5">Model (optional)</label>
             <input
               type="text"
               value={embeddingModel}
               onChange={(e) => setEmbeddingModel(e.target.value)}
               placeholder={selectedEmbeddingProvider?.defaultModel || "Default model"}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+              className="w-full px-4 py-2.5 bg-[#0C0A09] border border-[#292524] rounded-xl text-[#FAFAF9] placeholder-[#44403C] text-sm focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 transition-all"
             />
-            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Leave empty to use default: <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded">{selectedEmbeddingProvider?.defaultModel}</code>
+            <p className="mt-1 text-sm text-[#A8A29E]">
+              Leave empty to use default: <code className="bg-[#292524] px-1 rounded text-[#E8A87C]">{selectedEmbeddingProvider?.defaultModel}</code>
             </p>
           </div>
-          <button onClick={saveEmbedding} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+          <button onClick={saveEmbedding} disabled={saving} className="px-4 py-2 bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] font-semibold rounded-xl hover:opacity-90 disabled:opacity-50">
             {saving ? "Saving..." : "Save Embedding Settings"}
           </button>
         </div>
@@ -449,21 +667,21 @@ function ProviderForm({
     <div className="space-y-3">
       {/* Base URL */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Base URL</label>
+        <label className="block text-sm font-medium text-[#A8A29E] mb-1.5">Base URL</label>
         <div className="flex gap-2">
           <input
             type="text"
             value={form.base_url}
             onChange={(e) => setForm({ ...form, base_url: e.target.value })}
             placeholder={meta?.defaultUrl}
-            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+            className="flex-1 px-3 py-2 bg-[#0C0A09] border border-[#292524] rounded-xl text-[#FAFAF9] placeholder-[#44403C] text-sm focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 transition-all"
           />
           {isOllama && (
             <button
               type="button"
               onClick={() => fetchOllamaModels(form.base_url)}
               disabled={ollamaStatus === "loading"}
-              className="px-3 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-300 text-sm disabled:opacity-50"
+              className="px-3 py-2 bg-[#292524] text-[#A8A29E] border border-[#3F3F46] rounded-xl hover:bg-[#3F3F46] hover:text-[#FAFAF9] transition-all text-sm disabled:opacity-50"
             >
               {ollamaStatus === "loading" ? "..." : "Test"}
             </button>
@@ -480,27 +698,27 @@ function ProviderForm({
       {/* API Key (not for Ollama) */}
       {meta?.needsKey && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">API Key</label>
+          <label className="block text-sm font-medium text-[#A8A29E] mb-1.5">API Key</label>
           <input
             type="password"
             value={form.api_key}
             onChange={(e) => setForm({ ...form, api_key: e.target.value })}
             placeholder="Enter API key"
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+            className="w-full px-3 py-2 bg-[#0C0A09] border border-[#292524] rounded-xl text-[#FAFAF9] placeholder-[#44403C] text-sm focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 transition-all"
           />
         </div>
       )}
 
       {/* Model */}
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+        <label className="block text-sm font-medium text-[#A8A29E] mb-1.5">
           Model <span className="text-red-500">*</span>
         </label>
         {isOllama && ollamaModels.length > 0 ? (
           <select
             value={form.model}
             onChange={(e) => setForm({ ...form, model: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+            className="w-full px-3 py-2 bg-[#0C0A09] border border-[#292524] rounded-xl text-[#FAFAF9] placeholder-[#44403C] text-sm focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 transition-all"
           >
             <option value="">Select a model</option>
             {ollamaModels.map((m) => (
@@ -513,17 +731,17 @@ function ProviderForm({
             value={form.model}
             onChange={(e) => setForm({ ...form, model: e.target.value })}
             placeholder="e.g. gpt-4o, claude-sonnet-4-20250514, gemini-2.0-flash"
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm"
+            className="w-full px-3 py-2 bg-[#0C0A09] border border-[#292524] rounded-xl text-[#FAFAF9] placeholder-[#44403C] text-sm focus:outline-none focus:ring-2 focus:ring-[#E8A87C]/40 focus:border-[#E8A87C]/40 transition-all"
           />
         )}
       </div>
 
       {/* Actions */}
       <div className="flex gap-2 pt-2">
-        <button onClick={onSave} disabled={saving || !form.model} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 text-sm">
+        <button onClick={onSave} disabled={saving || !form.model} className="px-4 py-2 bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] font-semibold rounded-xl hover:opacity-90 disabled:opacity-50 text-sm">
           {saving ? "Saving..." : "Save"}
         </button>
-        <button onClick={onCancel} className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-300 text-sm">
+        <button onClick={onCancel} className="px-4 py-2 bg-[#292524] text-[#A8A29E] border border-[#3F3F46] rounded-xl hover:bg-[#3F3F46] hover:text-[#FAFAF9] transition-all text-sm">
           Cancel
         </button>
       </div>

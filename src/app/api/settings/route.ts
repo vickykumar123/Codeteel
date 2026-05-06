@@ -8,6 +8,7 @@ import { encrypt, decrypt, isEncrypted } from "@/lib/crypto";
 type AnyClient = any;
 
 const VALID_LLM_PROVIDERS = ["ollama", "openai", "claude", "gemini", "grok", "qwen", "fireworks", "together"];
+const VALID_PLATFORM_PROVIDERS = ["openai", "claude", "gemini", "grok", "qwen", "fireworks", "together"]; // no ollama
 const VALID_EMBEDDING_PROVIDERS = ["openai", "gemini", "mistral", "voyage", "cohere"];
 
 export async function GET() {
@@ -55,6 +56,18 @@ export async function GET() {
     profile.embedding_api_key = profile.embedding_api_key.slice(0, 7) + "...";
   }
 
+  // Fetch platform LLM providers
+  const { data: platformProviders } = await adminClient
+    .from("platform_llm_providers")
+    .select("id, provider, api_key, base_url, model, is_active")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: true });
+
+  const maskedPlatformProviders = (platformProviders || []).map((p: Record<string, unknown>) => ({
+    ...p,
+    api_key: p.api_key ? String(p.api_key).slice(0, 7) + "..." : null,
+  }));
+
   return NextResponse.json({
     settings: {
       embedding_provider: profile?.embedding_provider,
@@ -62,6 +75,7 @@ export async function GET() {
       embedding_model: profile?.embedding_model,
     },
     llmProviders: maskedProviders,
+    platformProviders: maskedPlatformProviders,
   });
 }
 
@@ -107,6 +121,7 @@ export async function POST(request: NextRequest) {
       encryptedKey = existing?.api_key || null;
     }
 
+    // Upsert without is_active first (avoids trigger conflict)
     const { error } = await adminClient
       .from("llm_providers")
       .upsert(
@@ -116,13 +131,22 @@ export async function POST(request: NextRequest) {
           api_key: encryptedKey,
           base_url,
           model,
-          is_active: is_active ?? false,
+          is_active: false,
         },
         { onConflict: "user_id,provider" }
       );
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Set active separately (trigger handles deactivating others)
+    if (is_active) {
+      await adminClient
+        .from("llm_providers")
+        .update({ is_active: true })
+        .eq("user_id", user.id)
+        .eq("provider", provider);
     }
   }
 
@@ -148,6 +172,96 @@ export async function POST(request: NextRequest) {
 
     const { error } = await adminClient
       .from("llm_providers")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("provider", provider);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  }
+
+  // Handle platform LLM provider upsert
+  if (body.platform_provider) {
+    const { provider, api_key, base_url, model, is_active } = body.platform_provider;
+
+    if (!VALID_PLATFORM_PROVIDERS.includes(provider)) {
+      return NextResponse.json({ error: "Invalid platform provider. Ollama is not supported for platform integrations." }, { status: 400 });
+    }
+    if (!model) {
+      return NextResponse.json({ error: "Model is required" }, { status: 400 });
+    }
+    if (!base_url) {
+      return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
+    }
+
+    let encryptedKey = null;
+    if (api_key && !api_key.includes("...")) {
+      encryptedKey = encrypt(api_key);
+    } else if (api_key && api_key.includes("...")) {
+      const { data: existing } = await adminClient
+        .from("platform_llm_providers")
+        .select("api_key")
+        .eq("user_id", user.id)
+        .eq("provider", provider)
+        .single();
+      encryptedKey = existing?.api_key || null;
+    }
+
+    if (!encryptedKey) {
+      return NextResponse.json({ error: "API key is required for platform providers" }, { status: 400 });
+    }
+
+    // Upsert without is_active first (avoids trigger conflict)
+    const { error } = await adminClient
+      .from("platform_llm_providers")
+      .upsert(
+        {
+          user_id: user.id,
+          provider,
+          api_key: encryptedKey,
+          base_url,
+          model,
+          is_active: false,
+        },
+        { onConflict: "user_id,provider" }
+      );
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Set active separately (trigger handles deactivating others)
+    if (is_active) {
+      await adminClient
+        .from("platform_llm_providers")
+        .update({ is_active: true })
+        .eq("user_id", user.id)
+        .eq("provider", provider);
+    }
+  }
+
+  // Handle setting active platform provider
+  if (body.set_active_platform_provider) {
+    const { provider } = body.set_active_platform_provider;
+
+    const { error } = await adminClient
+      .from("platform_llm_providers")
+      .update({ is_active: true })
+      .eq("user_id", user.id)
+      .eq("provider", provider);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+  }
+
+  // Handle deleting a platform provider
+  if (body.delete_platform_provider) {
+    const { provider } = body.delete_platform_provider;
+
+    const { error } = await adminClient
+      .from("platform_llm_providers")
       .delete()
       .eq("user_id", user.id)
       .eq("provider", provider);

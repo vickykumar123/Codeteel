@@ -69,7 +69,7 @@ export async function webFetch(url: string): Promise<WebFetchResult> {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; CodeBot/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; Codeteel/1.0)",
         Accept: "text/html,application/xhtml+xml,text/plain",
       },
       redirect: "follow",

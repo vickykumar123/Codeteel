@@ -169,6 +169,9 @@ export function chatStream(
 
   return new ReadableStream({
     async start(controller) {
+      // Send heartbeat immediately to open the stream (browser receives response instantly)
+      controller.enqueue(encoder.encode(`: connected\n\n`));
+
       try {
         const stream = await client.chat.completions.create({
           model,
@@ -207,6 +210,57 @@ export function chatStream(
       }
     },
   });
+}
+
+// ===========================================
+// SHARED CHAT FUNCTION FACTORY
+// ===========================================
+// Creates a ChatFn compatible with the agent system.
+// Used by: web (useOrchestrator), Slack handler, Telegram handler, test scripts.
+// Single source of truth — no duplicated chat logic per platform.
+
+import type {
+  ChatFn,
+  LLMChatMessage,
+  LLMToolDef,
+  LLMChatResponse,
+  LLMToolCall,
+} from "@/lib/agents/types";
+
+export function createChatFn(config: LLMConfig): ChatFn {
+  const client = createClient(config);
+
+  return async (
+    messages: LLMChatMessage[],
+    tools?: LLMToolDef[],
+  ): Promise<LLMChatResponse> => {
+    const completion = await client.chat.completions.create({
+      model: config.model,
+      messages: messages as ChatCompletionMessageParam[],
+      tools: tools && tools.length > 0 ? tools as ChatCompletionTool[] : undefined,
+      tool_choice: tools && tools.length > 0 ? "auto" : undefined,
+    });
+
+    const choice = completion.choices[0];
+    const message = choice?.message;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toolCalls: LLMToolCall[] | undefined = message?.tool_calls
+      ?.filter((tc: { type: string }) => tc.type === "function")
+      .map((tc: any) => ({
+        id: tc.id,
+        type: "function" as const,
+        function: {
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        },
+      }));
+
+    return {
+      content: message?.content || "",
+      tool_calls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
+    };
+  };
 }
 
 // Simple chat without tools (for backward compatibility)
@@ -286,6 +340,7 @@ Focus on:
 - Functions/classes defined in this chunk
 - Key logic and algorithms
 - Important variables and data structures
+- Any CRITICAL/HIGH security or performance issues (only if present)
 
 Keep the summary under 200 words. Be specific and technical.`,
     },
@@ -316,8 +371,9 @@ Create a unified summary that:
 - Lists all main functions/classes and what they do
 - Identifies key exports and dependencies
 - Removes redundancy from chunk summaries
+- Consolidates any CRITICAL/HIGH security or performance issues found across chunks (if any)
 
-Keep the final summary under 400 words. Be specific and technical.`,
+Keep the final summary under 450 words. Be specific and technical.`,
     },
     {
       role: "user",
@@ -343,8 +399,10 @@ Include:
 - Main functions/classes and what they do
 - Key exports
 - Dependencies/imports used
+- **Security issues** (CRITICAL/HIGH only): injection, XSS, auth bypass, exposed secrets, SSRF, insecure crypto. Skip if none found.
+- **Performance issues** (CRITICAL/HIGH only): N+1 queries, unbounded loops, memory leaks, missing pagination, blocking I/O. Skip if none found.
 
-Keep the summary under 300 words. Be specific and technical.`,
+Keep the summary under 350 words. Be specific and technical.`,
       },
       {
         role: "user",

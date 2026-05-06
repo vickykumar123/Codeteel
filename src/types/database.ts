@@ -61,6 +61,9 @@ export type Database = {
           created_at: string | null
           execution_state: Json | null
           id: string
+          is_processing: boolean | null
+          platform: string | null
+          platform_metadata: Json | null
           repo_id: string
           task_id: string | null
           title: string | null
@@ -72,6 +75,9 @@ export type Database = {
           created_at?: string | null
           execution_state?: Json | null
           id?: string
+          is_processing?: boolean | null
+          platform?: string | null
+          platform_metadata?: Json | null
           repo_id: string
           task_id?: string | null
           title?: string | null
@@ -83,6 +89,9 @@ export type Database = {
           created_at?: string | null
           execution_state?: Json | null
           id?: string
+          is_processing?: boolean | null
+          platform?: string | null
+          platform_metadata?: Json | null
           repo_id?: string
           task_id?: string | null
           title?: string | null
@@ -371,6 +380,127 @@ export type Database = {
           },
         ]
       }
+      platform_connect_tokens: {
+        Row: {
+          created_at: string | null
+          expires_at: string
+          id: string
+          platform: string
+          repo_id: string
+          token: string
+          used: boolean | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          expires_at: string
+          id?: string
+          platform?: string
+          repo_id: string
+          token: string
+          used?: boolean | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          expires_at?: string
+          id?: string
+          platform?: string
+          repo_id?: string
+          token?: string
+          used?: boolean | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_connect_tokens_repo_id_fkey"
+            columns: ["repo_id"]
+            isOneToOne: false
+            referencedRelation: "repositories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_connections: {
+        Row: {
+          access_token: string | null
+          created_at: string | null
+          id: string
+          platform: string
+          platform_channel_id: string
+          platform_team_id: string | null
+          platform_user_id: string
+          repo_id: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string | null
+          created_at?: string | null
+          id?: string
+          platform: string
+          platform_channel_id: string
+          platform_team_id?: string | null
+          platform_user_id: string
+          repo_id: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string | null
+          created_at?: string | null
+          id?: string
+          platform?: string
+          platform_channel_id?: string
+          platform_team_id?: string | null
+          platform_user_id?: string
+          repo_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_connections_repo_id_fkey"
+            columns: ["repo_id"]
+            isOneToOne: false
+            referencedRelation: "repositories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_llm_providers: {
+        Row: {
+          api_key: string
+          base_url: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          model: string
+          provider: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          api_key: string
+          base_url: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          model: string
+          provider: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          api_key?: string
+          base_url?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          model?: string
+          provider?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       repositories: {
         Row: {
           change_detection_branch: string | null
@@ -450,6 +580,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      slack_installations: {
+        Row: {
+          bot_token: string
+          bot_user_id: string | null
+          id: string
+          installed_at: string | null
+          team_id: string
+          team_name: string | null
+          user_id: string
+        }
+        Insert: {
+          bot_token: string
+          bot_user_id?: string | null
+          id?: string
+          installed_at?: string | null
+          team_id: string
+          team_name?: string | null
+          user_id: string
+        }
+        Update: {
+          bot_token?: string
+          bot_user_id?: string | null
+          id?: string
+          installed_at?: string | null
+          team_id?: string
+          team_name?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       tasks: {
         Row: {
