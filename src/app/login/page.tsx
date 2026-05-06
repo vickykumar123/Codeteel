@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { createBrowserClient } from "@/lib/db/client";
 import Link from "next/link";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginContent />
+    </Suspense>
+  );
+}
 
 function EyeIcon({ className }: { className?: string }) {
   return (
@@ -23,7 +31,7 @@ function EyeOffIcon({ className }: { className?: string }) {
   );
 }
 
-export default function LoginPage() {
+function LoginContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
