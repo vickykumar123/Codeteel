@@ -24,5 +24,6 @@ export async function POST() {
 
   await supabase.auth.signOut();
 
-  return NextResponse.redirect(new URL("/login", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:9999"));
+  const origin = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:9999";
+  return NextResponse.redirect(new URL("/login", origin), { status: 303 });
 }
