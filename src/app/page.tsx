@@ -1,14 +1,8 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
 import Link from "next/link";
 import Image from "next/image";
 
 export default async function Home() {
-  const user = await getCurrentUser();
-
-  if (user) {
-    redirect("/dashboard");
-  }
+  // Auth redirect handled by middleware (cookie check, no Supabase call)
 
   return (
     <div className="min-h-screen bg-[#0C0A09] text-[#FAFAF9] overflow-hidden">

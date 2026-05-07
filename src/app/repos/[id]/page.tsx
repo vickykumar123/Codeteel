@@ -22,10 +22,16 @@ export default async function RepoDetailPage({ params }: PageProps) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyClient = adminClient as any;
-  const [repoResult, providerResult, embeddingResult] = await Promise.all([
+
+  // ALL queries in parallel — single round trip
+  const [repoResult, providerResult, embeddingResult, connectionResult, slackResult, fileCountResult, filesResult] = await Promise.all([
     adminClient.from("repositories").select("*").eq("id", id).eq("user_id", user.id).single(),
     anyClient.from("llm_providers").select("provider, base_url, model").eq("user_id", user.id).eq("is_active", true).single(),
     adminClient.from("users").select("email, embedding_provider, embedding_api_key").eq("id", user.id).single(),
+    anyClient.from("platform_connections").select("id, platform, platform_channel_id, platform_team_id").eq("repo_id", id).eq("user_id", user.id),
+    anyClient.from("slack_installations").select("team_id, team_name, bot_token").eq("user_id", user.id),
+    adminClient.from("file_summaries").select("*", { count: "exact", head: true }).eq("repo_id", id),
+    adminClient.from("file_summaries").select("id, path, language, size, summary, code").eq("repo_id", id).order("path").limit(1000),
   ]);
 
   const { data: repo, error } = repoResult;
@@ -34,16 +40,10 @@ export default async function RepoDetailPage({ params }: PageProps) {
 
   if (error || !repo) notFound();
 
-  const [connectionResult, slackResult] = await Promise.all([
-    anyClient.from("platform_connections").select("id, platform, platform_channel_id, platform_team_id").eq("repo_id", id).eq("user_id", user.id),
-    anyClient.from("slack_installations").select("team_id, team_name, bot_token").eq("user_id", user.id),
-  ]);
-
   const platformConnections = connectionResult.data || [];
   const slackInstalled = (slackResult.data || []).length > 0;
-
-  const { count: fileCount } = await adminClient.from("file_summaries").select("*", { count: "exact", head: true }).eq("repo_id", id);
-  const { data: files } = await adminClient.from("file_summaries").select("id, path, language, size, summary, code").eq("repo_id", id).order("path").limit(1000);
+  const fileCount = fileCountResult.count;
+  const files = filesResult.data;
 
   const statusStyle: Record<string, string> = {
     ready: "bg-green-500/10 text-green-400 border-green-500/20",

@@ -6,6 +6,7 @@ import type { NextRequest } from "next/server";
 import crypto from "crypto";
 import { createAdminClient } from "@/lib/db/client";
 import { pushToQueue } from "@/lib/platforms/queue";
+import { decrypt } from "@/lib/crypto";
 
 // Verify Slack request signature
 function verifySlackSignature(
@@ -75,6 +76,28 @@ export async function POST(request: NextRequest) {
       // Skip bot's own messages
       if (installation.bot_user_id && slackEvent.user === installation.bot_user_id) {
         return NextResponse.json({ ok: true });
+      }
+
+      // Send immediate "Processing..." feedback
+      const { data: tokenData } = await adminClient
+        .from("slack_installations")
+        .select("bot_token")
+        .eq("team_id", event.team_id)
+        .single();
+
+      if (tokenData?.bot_token) {
+        try {
+          const botToken = decrypt(tokenData.bot_token);
+          fetch("https://slack.com/api/chat.postMessage", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${botToken}` },
+            body: JSON.stringify({
+              channel: slackEvent.channel,
+              text: "⏳ Processing...",
+              ...(slackEvent.thread_ts ? { thread_ts: slackEvent.thread_ts } : {}),
+            }),
+          }).catch(() => {});
+        } catch { /* decrypt/send failed — continue without feedback */ }
       }
 
       // Push to SQS → Lambda processes
