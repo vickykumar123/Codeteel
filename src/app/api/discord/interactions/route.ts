@@ -106,9 +106,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Commands that need deferred response (slow — hit GitHub/DB)
-    const alwaysDefer = ["branches"];
-    const needsDefer = (commandName === "branch" && args.startsWith("create"));
+    // Commands that need deferred response (hit GitHub/DB — can exceed Discord's 3s limit)
+    const alwaysDefer = ["branches", "connect", "status", "disconnect", "security", "clear", "reset"];
+    const needsDefer = (commandName === "branch");
 
     if (alwaysDefer.includes(commandName) || needsDefer) {
       // Defer response, process via SQS
