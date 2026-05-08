@@ -106,47 +106,30 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Commands that need deferred response (hit GitHub/DB — can exceed Discord's 3s limit)
-    const alwaysDefer = ["branches", "connect", "status", "disconnect", "security", "clear", "reset"];
-    const needsDefer = (commandName === "branch");
-
-    if (alwaysDefer.includes(commandName) || needsDefer) {
-      // Defer response, process via SQS
-      try {
-        await pushToQueue({
-          operation: "event",
-          platform: "discord",
-          userId,
-          channelId,
-          teamId: guildId,
-          text: `/${commandName} ${args}`.trim(),
-          action: {
-            actionId: "command",
-            value: commandName,
-            messageTs: interaction.id,
-          },
-        });
-      } catch {
-        // SQS not available — handle directly
-        const { handleDiscordCommand } = await import("@/lib/platforms/discord/handler");
-        const response = await handleDiscordCommand(channelId, commandName, args, userId, botToken);
-        return NextResponse.json({
-          type: INTERACTION_RESPONSE_TYPE.CHANNEL_MESSAGE_WITH_SOURCE,
-          data: { content: response },
-        });
-      }
-
+    // All other commands — push to SQS, respond immediately with "Processing..."
+    // (Discord's 3s timeout is too tight for Vercel cold starts + DB queries)
+    try {
+      await pushToQueue({
+        operation: "event",
+        platform: "discord",
+        userId,
+        channelId,
+        teamId: guildId,
+        text: `/${commandName} ${args}`.trim(),
+      });
+    } catch {
+      // SQS not available — handle directly
+      const { handleDiscordCommand } = await import("@/lib/platforms/discord/handler");
+      const response = await handleDiscordCommand(channelId, commandName, args, userId, botToken);
       return NextResponse.json({
-        type: INTERACTION_RESPONSE_TYPE.DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE,
+        type: INTERACTION_RESPONSE_TYPE.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: { content: response },
       });
     }
 
-    // Fast commands — respond immediately
-    const { handleDiscordCommand } = await import("@/lib/platforms/discord/handler");
-    const response = await handleDiscordCommand(channelId, commandName, args, userId, botToken);
     return NextResponse.json({
       type: INTERACTION_RESPONSE_TYPE.CHANNEL_MESSAGE_WITH_SOURCE,
-      data: { content: response },
+      data: { content: `⏳ Processing \`/${commandName}\`...` },
     });
   }
 
