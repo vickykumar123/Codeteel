@@ -116,6 +116,11 @@ export async function POST(request: NextRequest) {
         channelId,
         teamId: guildId,
         text: `/${commandName} ${args}`.trim(),
+        action: {
+          actionId: "command",
+          value: commandName,
+          messageTs: interaction.id,
+        },
       });
     } catch {
       // SQS not available — handle directly
