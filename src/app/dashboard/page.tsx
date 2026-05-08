@@ -9,12 +9,18 @@ export default async function DashboardPage() {
 
   const supabase = createAdminClient();
 
-  const [{ data: profile }, { data: repos }] = await Promise.all([
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyClient = supabase as any;
+  const [{ data: profile }, { data: repos }, { data: llmProvider }, { data: embeddingCheck }] = await Promise.all([
     supabase.from("users").select("*").eq("id", user.id).single(),
     supabase.from("repositories").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+    anyClient.from("llm_providers").select("id").eq("user_id", user.id).eq("is_active", true).limit(1),
+    supabase.from("users").select("embedding_provider, embedding_api_key").eq("id", user.id).single(),
   ]);
 
   const isGitHubConnected = !!profile?.github_access_token;
+  const hasLlmProvider = (llmProvider || []).length > 0;
+  const hasEmbedding = !!(embeddingCheck?.embedding_provider && embeddingCheck?.embedding_api_key);
   const repoCount = repos?.length || 0;
   const totalFiles = repos?.reduce((sum, r) => sum + (r.file_count || 0), 0) || 0;
   const indexedCount = repos?.filter(r => r.index_status === "ready").length || 0;
@@ -46,6 +52,42 @@ export default async function DashboardPage() {
               >
                 Connect GitHub
               </a>
+            </div>
+          </div>
+        )}
+
+        {/* LLM Provider Warning */}
+        {!hasLlmProvider && isGitHubConnected && (
+          <div className="mb-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-semibold text-[#FAFAF9] text-sm">Configure an LLM Provider</h3>
+                <p className="text-xs text-[#A8A29E] mt-1">Add an AI model to enable code chat and code generation. Use Ollama for free local models or a cloud provider.</p>
+              </div>
+              <Link
+                href="/settings"
+                className="px-4 py-2 bg-[#292524] text-[#FAFAF9] border border-[#3F3F46] font-medium rounded-xl text-xs hover:bg-[#3F3F46] transition-colors flex-shrink-0"
+              >
+                Go to Settings
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Embedding Warning */}
+        {!hasEmbedding && isGitHubConnected && hasLlmProvider && (
+          <div className="mb-6 bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-semibold text-[#FAFAF9] text-sm">Configure Embedding Provider</h3>
+                <p className="text-xs text-[#A8A29E] mt-1">Required for code indexing and semantic search. Add an embedding API key in Settings.</p>
+              </div>
+              <Link
+                href="/settings"
+                className="px-4 py-2 bg-[#292524] text-[#FAFAF9] border border-[#3F3F46] font-medium rounded-xl text-xs hover:bg-[#3F3F46] transition-colors flex-shrink-0"
+              >
+                Go to Settings
+              </Link>
             </div>
           </div>
         )}
