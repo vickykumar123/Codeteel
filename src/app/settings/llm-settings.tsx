@@ -375,68 +375,93 @@ export function LLMSettings({
   const formatSize = (bytes: number) => `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-5 sm:p-6 space-y-6">
       {/* Status Message */}
       {message && (
-        <div className={`text-sm p-3 rounded-lg ${message.type === "success" ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400" : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"}`}>
+        <div className={`text-sm p-3.5 rounded-xl ${message.type === "success" ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"}`}>
           {message.text}
         </div>
       )}
 
       {/* Configured Providers */}
       <div>
-        <label className="block text-sm font-medium text-[#A8A29E] mb-3">
-          LLM Providers
-        </label>
+        <div className="flex items-center justify-between mb-3">
+          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-[#71717A]">
+            Your Providers
+          </label>
+          {providers.length > 0 && (
+            <span className="text-[10px] text-[#71717A]">{providers.length} configured</span>
+          )}
+        </div>
 
         {providers.length === 0 && !addingNew && (
-          <div className="text-sm text-[#A8A29E] p-4 border border-dashed border-[#3F3F46] rounded-lg text-center">
-            No providers configured. Add one below.
+          <div className="text-sm text-[#71717A] p-8 border border-dashed border-[#3F3F46] rounded-2xl text-center">
+            <svg className="w-8 h-8 mx-auto mb-3 text-[#3F3F46]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+            </svg>
+            No providers configured yet. Add one below to get started.
           </div>
         )}
 
-        <div className="space-y-3">
+        <div className="space-y-2">
           {providers.map((p) => (
-            <div key={p.provider} className={`p-4 border-2 rounded-lg ${p.is_active ? "border-[#E8A87C] bg-[#E8A87C]/10" : "border-gray-200 dark:border-gray-600"}`}>
+            <div key={p.provider} className={`rounded-xl border transition-all ${
+              editingProvider === p.provider && !addingNew
+                ? "border-[#E8A87C]/30 bg-[#E8A87C]/5"
+                : p.is_active
+                  ? "border-[#E8A87C]/40 bg-[#E8A87C]/5"
+                  : "border-[#292524] hover:border-[#3F3F46]"
+            }`}>
               {editingProvider === p.provider && !addingNew ? (
-                // Edit form
-                <ProviderForm
-                  form={editForm}
-                  setForm={setEditForm}
-                  ollamaModels={ollamaModels}
-                  ollamaStatus={ollamaStatus}
-                  fetchOllamaModels={fetchOllamaModels}
-                  formatSize={formatSize}
-                  onSave={saveProvider}
-                  onCancel={cancelEdit}
-                  saving={saving}
-                />
+                <div className="p-4">
+                  <ProviderForm
+                    form={editForm}
+                    setForm={setEditForm}
+                    ollamaModels={ollamaModels}
+                    ollamaStatus={ollamaStatus}
+                    fetchOllamaModels={fetchOllamaModels}
+                    formatSize={formatSize}
+                    onSave={saveProvider}
+                    onCancel={cancelEdit}
+                    saving={saving}
+                  />
+                </div>
               ) : (
-                // Display
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-[#FAFAF9]">
-                        {LLM_PROVIDERS.find(m => m.id === p.provider)?.name || p.provider}
-                      </span>
-                      {p.is_active && <span className="text-xs bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full">Active</span>}
+                <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                      p.is_active ? "bg-[#E8A87C]/20 text-[#E8A87C]" : "bg-[#292524] text-[#71717A]"
+                    }`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                      </svg>
                     </div>
-                    <div className="text-sm text-[#A8A29E] mt-1">
-                      Model: <code className="bg-[#292524] px-1 rounded text-[#E8A87C]">{p.model}</code>
-                      {p.api_key && <span className="ml-3">Key: {p.api_key}</span>}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-[#FAFAF9]">
+                          {LLM_PROVIDERS.find(m => m.id === p.provider)?.name || p.provider}
+                        </span>
+                        {p.is_active && <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/20 px-1.5 py-0.5 rounded-md">Active</span>}
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <code className="text-xs text-[#E8A87C] bg-[#292524] px-1.5 py-0.5 rounded-md">{p.model}</code>
+                        {p.api_key && <span className="text-[10px] text-[#71717A]">{p.api_key}</span>}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
                     {!p.is_active && (
-                      <button onClick={() => setActive(p.provider)} disabled={saving} className="text-xs px-3 py-1.5 bg-[#E8A87C]/10 text-[#E8A87C] border border-[#E8A87C]/20 rounded-lg hover:bg-[#E8A87C]/20 disabled:opacity-50 transition-all">
-                        Set Active
+                      <button onClick={() => setActive(p.provider)} disabled={saving} className="text-[11px] px-2.5 py-1.5 bg-[#E8A87C]/10 text-[#E8A87C] border border-[#E8A87C]/20 rounded-lg hover:bg-[#E8A87C]/20 disabled:opacity-50 transition-all">
+                        Activate
                       </button>
                     )}
-                    <button onClick={() => startEdit(p)} className="text-xs px-3 py-1.5 bg-[#292524] text-[#A8A29E] border border-[#3F3F46] rounded-lg hover:bg-[#3F3F46] hover:text-[#FAFAF9] transition-all">
+                    <button onClick={() => startEdit(p)} className="text-[11px] px-2.5 py-1.5 bg-[#292524] text-[#A8A29E] border border-[#3F3F46] rounded-lg hover:bg-[#3F3F46] hover:text-[#FAFAF9] transition-all">
                       Edit
                     </button>
-                    <button onClick={() => deleteProvider(p.provider)} disabled={saving} className="text-xs px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg hover:bg-red-500/20 disabled:opacity-50 transition-all">
-                      Remove
+                    <button onClick={() => deleteProvider(p.provider)} disabled={saving} className="text-[11px] px-2.5 py-1.5 text-[#71717A] hover:text-red-400 hover:bg-red-500/10 rounded-lg disabled:opacity-50 transition-all">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                      </svg>
                     </button>
                   </div>
                 </div>
@@ -469,7 +494,7 @@ export function LLMSettings({
       {/* Add Provider Buttons */}
       {availableToAdd.length > 0 && !addingNew && (
         <div>
-          <label className="block text-sm font-medium text-[#A8A29E] mb-3">
+          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-[#71717A] mb-3 block">
             Add Provider
           </label>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -477,10 +502,17 @@ export function LLMSettings({
               <button
                 key={p.id}
                 onClick={() => startAdd(p.id)}
-                className="p-3 border border-[#292524] rounded-xl text-left hover:border-[#E8A87C]/30 hover:bg-[#E8A87C]/5 transition-all"
+                className="group p-3.5 border border-[#292524] rounded-xl text-left hover:border-[#E8A87C]/30 hover:bg-[#E8A87C]/5 transition-all"
               >
-                <div className="font-medium text-[#FAFAF9] text-sm">{p.name}</div>
-                <div className="text-xs text-[#44403C]">{p.description}</div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-6 h-6 rounded-lg bg-[#292524] group-hover:bg-[#E8A87C]/20 flex items-center justify-center transition-colors">
+                    <svg className="w-3 h-3 text-[#71717A] group-hover:text-[#E8A87C] transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                  </div>
+                  <div className="font-medium text-[#FAFAF9] text-xs">{p.name}</div>
+                </div>
+                <div className="text-[10px] text-[#71717A] ml-8">{p.description}</div>
               </button>
             ))}
           </div>
