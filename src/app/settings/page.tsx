@@ -46,11 +46,38 @@ export default async function SettingsPage() {
   const profile = profileResult.data;
   const slackInstallations = slackResult.data || [];
 
+  const hasLlmProvider = providers.length > 0;
+  const hasEmbedding = !!(profile?.embedding_provider && profile?.embedding_api_key);
+
   return (
     <div className="min-h-screen bg-[#0C0A09]">
       <AppNavbar email={profile?.email} activePage="settings" />
 
       <SettingsLayout>
+        {/* Setup warnings */}
+        {!hasLlmProvider && (
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5 mb-2">
+            <div className="flex items-start gap-3">
+              <span className="text-amber-400 font-bold text-sm mt-0.5">!</span>
+              <div>
+                <h3 className="font-semibold text-[#FAFAF9] text-sm">No LLM provider configured</h3>
+                <p className="text-xs text-[#A8A29E] mt-1">Add an AI model below to enable code chat and generation. Use Ollama for free local models or add a cloud provider API key.</p>
+              </div>
+            </div>
+          </div>
+        )}
+        {hasLlmProvider && !hasEmbedding && (
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-5 mb-2">
+            <div className="flex items-start gap-3">
+              <span className="text-amber-400 font-bold text-sm mt-0.5">!</span>
+              <div>
+                <h3 className="font-semibold text-[#FAFAF9] text-sm">No embedding provider configured</h3>
+                <p className="text-xs text-[#A8A29E] mt-1">Add an embedding API key below to enable code indexing and semantic search.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* LLM Configuration (contains #llm, #platform-llm, #embedding sections internally) */}
         <section id="llm" className="scroll-mt-24">
           <SectionHeader
