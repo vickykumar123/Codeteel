@@ -29,13 +29,13 @@ export default async function Home() {
           </a>
           <Link
             href="/login"
-            className="text-sm text-[#A8A29E] hover:text-[#FAFAF9] transition-colors"
+            className="hidden sm:inline text-sm text-[#A8A29E] hover:text-[#FAFAF9] transition-colors"
           >
             Sign in
           </Link>
           <Link
             href="/signup"
-            className="text-sm px-4 sm:px-5 py-2 bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] font-semibold rounded-lg hover:opacity-90 transition-opacity"
+            className="hidden sm:inline text-sm px-5 py-2 bg-gradient-to-r from-[#E8A87C] to-[#C9A96E] text-[#0C0A09] font-semibold rounded-lg hover:opacity-90 transition-opacity"
           >
             Get Started
           </Link>
