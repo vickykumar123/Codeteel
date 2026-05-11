@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
 import { PageHeader, P, StepList, Callout, NextPage } from "./components";
+
+export const metadata: Metadata = {
+  title: "Documentation — Codeteel | Setup, Configuration, Platform Guides",
+  description: "Learn how to set up Codeteel, configure Ollama and cloud LLM providers, index your codebase, connect Slack, Telegram, Discord, and use AI-powered code chat, PR review, and security scanning.",
+};
 
 export default function DocsIntroPage() {
   return (
